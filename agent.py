@@ -41,20 +41,28 @@ log = logging.getLogger(__name__)
 
 # ── PORTAFOGLIO COMPLETO — 18 PIE ───────────────────────────
 PORTFOLIO = {
+    # TIER 1 — Dividend Growth Core (40%)
+    # Regola duplicati: titolo in due PIE solo se tier diversi
     "PIE01_Aristocrats_USA": {
         "tier": 1, "peso": "8%",
+        # PG/KO/JNJ/PEP restano anche in PIE14 (Tier3) — sovrappeso intenzionale
         "tickers": ["PG", "JNJ", "KO", "PEP", "ABT", "MDT", "WMT", "EMR"]
     },
     "PIE02_Aristocrats_EU": {
         "tier": 1, "peso": "7%",
+        # AI.PA/LIN/SIKA restano anche in PIE15 (Tier3) — sovrappeso intenzionale
+        # NESN rimossa da PIE14 — resta solo qui come Aristocrat EU
         "tickers": ["AI.PA", "NESN.SW", "OR.PA", "SIKA.SW", "WKL.AS", "DSY.PA", "LIN"]
     },
     "PIE03_Aristocrats_Asia": {
         "tier": 1, "peso": "7%",
+        # D05.SI rimossa da PIE18 — Singapore e Asia sviluppata, non EM
         "tickers": ["D05.SI", "O39.SI", "U11.SI", "7203.T", "8766.T", "CBA.AX"]
     },
     "PIE04_Champions_Energia": {
         "tier": 1, "peso": "6%",
+        # WMB/ENB restano anche in PIE16 (Tier3) — sovrappeso intenzionale
+        # CEG resta anche in PIE13 (Tier3) — ruolo duale energia/utility
         "tickers": ["XOM", "CVX", "WMB", "ENB", "TTE", "EOG", "CEG"]
     },
     "PIE05_Champions_Finanza": {
@@ -63,8 +71,10 @@ PORTFOLIO = {
     },
     "PIE06_REIT_Growth": {
         "tier": 1, "peso": "6%",
+        # AMT/AWK/EQIX rimossi da PIE12 (stesso tier) — restano solo qui
         "tickers": ["O", "PLD", "AMT", "EQIX", "WPC", "AWK"]
     },
+    # TIER 2 — Quality Compounders (30%)
     "PIE07_Quality_Tech": {
         "tier": 2, "peso": "6%",
         "tickers": ["ASML", "MSFT", "TXN", "AAPL", "SAP", "AVGO"]
@@ -75,6 +85,7 @@ PORTFOLIO = {
     },
     "PIE09_Quality_Healthcare": {
         "tier": 2, "peso": "5%",
+        # JNJ resta anche in PIE01 (Tier1) — sovrappeso intenzionale
         "tickers": ["JNJ", "LLY", "NOVOB.CO", "AZN", "TMO", "CSL.AX", "UNH"]
     },
     "PIE10_Quality_Difesa": {
@@ -87,31 +98,44 @@ PORTFOLIO = {
     },
     "PIE12_Quality_Infrastrutture": {
         "tier": 2, "peso": "4%",
-        "tickers": ["BIP", "DG.PA", "TCL.AX", "AWK", "AMT", "EQIX"]
+        # AMT/AWK/EQIX rimossi — stesso tier di PIE06, ridondanza senza valore
+        # Sostituiti con titoli infrastrutture puri non presenti altrove
+        "tickers": ["BIP", "DG.PA", "TCL.AX", "TCOM.AX", "ATNI.MI"]
     },
+    # TIER 3 — Low Volatility Income (20%)
     "PIE13_Utility_Nucleare": {
         "tier": 3, "peso": "6%",
+        # CEG resta anche in PIE04 (Tier1) — ruolo duale giustificato
+        # SRG.MI rimossa da PIE16 — utility italiana, non pipeline internazionale
         "tickers": ["CEG", "ENEL.MI", "IBE.MC", "ETR", "SRG.MI", "TRN.MI", "D"]
     },
     "PIE14_Consumer_Staples": {
         "tier": 3, "peso": "5%",
-        "tickers": ["PG", "KO", "PEP", "NESN.SW", "ULVR.L", "COST"]
+        # PG/KO/PEP restano — sovrappeso intenzionale da Tier1
+        # NESN rimossa — resta solo in PIE02 come Aristocrat EU
+        # Aggiunta ULVR per diversificazione UK
+        "tickers": ["PG", "KO", "PEP", "ULVR.L", "COST", "HINDUNILVR.NS"]
     },
     "PIE15_Gas_Industriali": {
         "tier": 3, "peso": "5%",
+        # AI.PA/LIN/SIKA restano — sovrappeso intenzionale da Tier1
         "tickers": ["AI.PA", "LIN", "SIKA.SW", "SHW", "APD"]
     },
     "PIE16_Midstream_Pipeline": {
         "tier": 3, "peso": "4%",
-        "tickers": ["WMB", "ENB", "KMI", "TRP", "SRG.MI"]
+        # WMB/ENB restano — sovrappeso intenzionale da Tier1
+        # SRG.MI rimossa — utility, non pipeline. Aggiunta TRP
+        "tickers": ["WMB", "ENB", "KMI", "TRP", "PPL"]
     },
+    # TIER 4 — Momentum Growth (10%)
     "PIE17_AI_Tech": {
         "tier": 4, "peso": "6%",
         "tickers": ["NVDA", "GOOGL", "META", "AMZN", "AMD"]
     },
     "PIE18_EM_Growth": {
         "tier": 4, "peso": "4%",
-        "tickers": ["INFY", "HDB", "ITUB", "VALE", "IBN"]
+        # D05.SI rimossa — Asia sviluppata, non EM. Aggiunta Tencent
+        "tickers": ["INFY", "HDB", "ITUB", "VALE", "IBN", "0700.HK", "RELIANCE.NS"]
     },
 }
 
