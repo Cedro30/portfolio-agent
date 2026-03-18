@@ -479,10 +479,12 @@ def send_evening_report():
     losers  = sorted([(t,d) for t,d in prices.items() if d.get("change_pct",0)<0],
                      key=lambda x: x[1]["change_pct"])
 
+    top_up  = ", ".join([f"{TICKER_NAMES.get(t,t)} +{d['change_pct']:.1f}%" for t,d in gainers[:3]])
+    top_dn  = ", ".join([f"{TICKER_NAMES.get(t,t)} {d['change_pct']:.1f}%"  for t,d in losers[:3]])
     context = (
         f"Report serale {now.strftime('%d/%m/%Y')}. "
-        f"Top 3 su: {', '.join([f'{TICKER_NAMES.get(t,t)} +{d[\"change_pct\"]:.1f}%' for t,d in gainers[:3]])}. "
-        f"Top 3 giu: {', '.join([f'{TICKER_NAMES.get(t,t)} {d[\"change_pct\"]:.1f}%' for t,d in losers[:3]])}. "
+        f"Top 3 su: {top_up}. "
+        f"Top 3 giu: {top_dn}. "
         f"Valuta la giornata per il portafoglio buy & hold dividend growth e dai un consiglio."
     )
     analysis = analyze_with_claude(context)
