@@ -547,5 +547,14 @@ if __name__ == "__main__":
     log.info("Portfolio Agent — Factor Portfolio 18 PIE")
     log.info(f"Ticker monitorati: {len(ALL_TICKERS)}")
     log.info(f"Ticker US: {len(US_TICKERS)}")
+
+    # DEBUG variabili d ambiente
+    token = os.environ.get("TELEGRAM_TOKEN", "")
+    chat  = os.environ.get("TELEGRAM_CHAT_ID", "")
+    log.info(f"TELEGRAM_TOKEN lunghezza: {len(token)} | inizio: {repr(token[:15])}")
+    log.info(f"TELEGRAM_CHAT_ID: {repr(chat)} | lunghezza: {len(chat)}")
+    log.info(f"ANTHROPIC lunghezza: {len(os.environ.get('ANTHROPIC_API_KEY',''))}")
+    log.info(f"NEWSAPI lunghezza: {len(os.environ.get('NEWS_API_KEY',''))}")
+
     init_db()
     run_scheduler()
