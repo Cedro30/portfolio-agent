@@ -56,8 +56,9 @@ PORTFOLIO = {
     },
     "PIE03_Aristocrats_Asia": {
         "tier": 1, "peso": "7%",
-        # D05.SI rimossa da PIE18 — Singapore e Asia sviluppata, non EM
-        "tickers": ["D05.SI", "O39.SI", "U11.SI", "7203.T", "8766.T", "CBA.AX"]
+        # OCBC(O39.SI) e UOB(U11.SI) non disponibili su T212 — DBS consolidata
+        # Tokio Marine(8766.T) non disponibile su T212 — sostituita con Sony(6758.T)
+        "tickers": ["D05.SI", "7203.T", "6758.T", "CBA.AX"]
     },
     "PIE04_Champions_Energia": {
         "tier": 1, "peso": "6%",
@@ -86,7 +87,7 @@ PORTFOLIO = {
     "PIE09_Quality_Healthcare": {
         "tier": 2, "peso": "5%",
         # JNJ resta anche in PIE01 (Tier1) — sovrappeso intenzionale
-        "tickers": ["JNJ", "LLY", "NOVOB.CO", "AZN", "TMO", "CSL.AX", "UNH"]
+        "tickers": ["JNJ", "LLY", "NOVOB.CO", "AZN", "TMO", "ROG.SW", "UNH"]
     },
     "PIE10_Quality_Difesa": {
         "tier": 2, "peso": "5%",
@@ -94,13 +95,13 @@ PORTFOLIO = {
     },
     "PIE11_Quality_Chip": {
         "tier": 2, "peso": "4%",
-        "tickers": ["TSM", "005930.KS", "000660.KS", "2454.TW", "8035.T"]
+        "tickers": ["TSM", "005930.KS", "000660.KS", "QCOM", "8035.T"]
     },
     "PIE12_Quality_Infrastrutture": {
         "tier": 2, "peso": "4%",
         # AMT/AWK/EQIX rimossi — stesso tier di PIE06, ridondanza senza valore
         # Sostituiti con titoli infrastrutture puri non presenti altrove
-        "tickers": ["BIP", "DG.PA", "TCL.AX", "TCOM.AX", "ATNI.MI"]
+        "tickers": ["BIP", "DG.PA", "FER.MC", "GET.PA", "ATNI.MI"]
     },
     # TIER 3 — Low Volatility Income (20%)
     "PIE13_Utility_Nucleare": {
@@ -114,7 +115,7 @@ PORTFOLIO = {
         # PG/KO/PEP restano — sovrappeso intenzionale da Tier1
         # NESN rimossa — resta solo in PIE02 come Aristocrat EU
         # Aggiunta ULVR per diversificazione UK
-        "tickers": ["PG", "KO", "PEP", "ULVR.L", "COST", "HINDUNILVR.NS"]
+        "tickers": ["PG", "KO", "PEP", "ULVR.L", "COST"]
     },
     "PIE15_Gas_Industriali": {
         "tier": 3, "peso": "5%",
@@ -130,12 +131,12 @@ PORTFOLIO = {
     # TIER 4 — Momentum Growth (10%)
     "PIE17_AI_Tech": {
         "tier": 4, "peso": "6%",
-        "tickers": ["NVDA", "GOOGL", "META", "AMZN", "AMD"]
+        "tickers": ["NVDA", "GOOGL", "META", "AMZN", "AMD", "KWEB"]
     },
     "PIE18_EM_Growth": {
         "tier": 4, "peso": "4%",
         # D05.SI rimossa — Asia sviluppata, non EM. Aggiunta Tencent
-        "tickers": ["INFY", "HDB", "ITUB", "VALE", "IBN", "0700.HK", "RELIANCE.NS"]
+        "tickers": ["INFY", "HDB", "ITUB", "VALE", "IBN", "KWEB", "RELIANCE.NS"]
     },
 }
 
