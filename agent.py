@@ -477,44 +477,65 @@ def check_callbacks():
 
 # ── PREZZI ───────────────────────────────────────────────────
 def get_prices_batch(tickers):
-    """FMP bulk quote — 1 richiesta per tutti i ticker USA.
-    Piano gratuito: 250 req/giorno, nessun limite/minuto, nessun blocco IP."""
+    """FMP quote — batch da 5 ticker, compatibile piano gratuito.
+    62 ticker = 13 batch = 13 richieste per ciclo ogni 6 minuti."""
     results = {}
     if not tickers or not FMP_API_KEY:
         return results
     us_tickers = [t for t in tickers if "." not in t]
     if not us_tickers:
         return results
-    try:
-        symbols = ",".join(us_tickers)
-        r = requests.get(
-            f"{FMP_URL}/quote/{symbols}",
-            params={"apikey": FMP_API_KEY},
-            timeout=30
-        )
-        if not r.ok:
-            log.error(f"FMP HTTP {r.status_code}")
-            return results
-        data = r.json()
-        if isinstance(data, list):
-            for q in data:
-                ticker = q.get("symbol", "")
-                price  = float(q.get("price", 0) or 0)
-                prev   = float(q.get("previousClose", 0) or 0)
-                change = float(q.get("changesPercentage", 0) or 0)
-                if ticker and price > 0:
-                    results[ticker] = {
-                        "price":      price,
-                        "prev_close": prev if prev else price,
-                        "change_pct": change
-                    }
+    for i in range(0, len(us_tickers), 5):
+        batch   = us_tickers[i:i+5]
+        symbols = ",".join(batch)
+        try:
+            r = requests.get(
+                f"{FMP_URL}/quote/{symbols}",
+                params={"apikey": FMP_API_KEY},
+                timeout=15
+            )
+            if r.ok:
+                data = r.json()
+                if isinstance(data, list):
+                    for q in data:
+                        ticker = q.get("symbol", "")
+                        price  = float(q.get("price", 0) or 0)
+                        prev   = float(q.get("previousClose", 0) or 0)
+                        change = float(q.get("changesPercentage", 0) or 0)
+                        if ticker and price > 0:
+                            results[ticker] = {
+                                "price":      price,
+                                "prev_close": prev if prev else price,
+                                "change_pct": change
+                            }
+            else:
+                log.error(f"FMP HTTP {r.status_code}")
+        except Exception as e:
+            log.error(f"FMP error: {e}")
+        time.sleep(0.5)
+    if results:
         log.info(f"FMP: {len(results)}/{len(us_tickers)} ticker")
-    except Exception as e:
-        log.error(f"FMP error: {e}")
     return results
 def get_intraday_batch(tickers):
     """Alias di get_prices_batch — FMP usa lo stesso endpoint per prezzi real-time."""
     return get_prices_batch(tickers)
+
+def get_news(query, hours=8, max_articles=5):
+    """Cerca articoli su NewsAPI per una query specifica."""
+    if not NEWS_API_KEY:
+        return []
+    from_time = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        r = requests.get("https://newsapi.org/v2/everything", params={
+            "q": query, "from": from_time, "sortBy": "publishedAt",
+            "language": "en", "pageSize": max_articles, "apiKey": NEWS_API_KEY
+        }, timeout=10)
+        if r.ok:
+            return [{"title": a["title"], "source": a["source"]["name"],
+                     "url": a["url"]} for a in r.json().get("articles", [])]
+    except Exception as e:
+        log.error(f"NewsAPI error: {e}")
+    return []
 
 def get_portfolio_news(hours=8, tier_filter=None):
     """Cerca notizie per TUTTI i titoli di ogni PIE.
@@ -1146,7 +1167,7 @@ def send_weekly_report():
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
     # Ogni minuto: prezzi + callback
-    schedule.every(6).minutes.do(check_price_alerts)  # 6 min = 240 req/giorno (FMP free: 250)
+    schedule.every(75).minutes.do(check_price_alerts)  # 75 min = 19 cicli/giorno x 13 req = 247 req (limite FMP: 250)
     schedule.every(1).minutes.do(check_callbacks)
     # Notizie: schema ottimale 93 richieste/giorno (limite 100)
     # 08:00 CET — scansione completa 35 query (apertura mercati EU)
