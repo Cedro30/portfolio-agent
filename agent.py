@@ -27,8 +27,8 @@ DIGEST_HOUR       = [10, 12, 14, 16]
 REPORT_HOUR       = 18
 BATCH_SIZE        = 10
 GITHUB_TOKEN       = os.environ.get("GITHUB_TOKEN", "")
-TWELVE_DATA_KEY    = os.environ.get("TWELVE_DATA_KEY", "")
-TWELVE_DATA_URL    = "https://api.twelvedata.com"
+FMP_API_KEY        = os.environ.get("FMP_API_KEY", "")
+FMP_URL            = "https://financialmodelingprep.com/api/v3"
 GITHUB_REPO       = os.environ.get("GITHUB_REPO", "portfolio-agent")
 GITHUB_USERNAME   = os.environ.get("GITHUB_USERNAME", "")
 PORTFOLIO_FILE    = "portfolio.json"
@@ -477,96 +477,44 @@ def check_callbacks():
 
 # ── PREZZI ───────────────────────────────────────────────────
 def get_prices_batch(tickers):
-    """Scarica prezzi giornalieri via Twelve Data.
-    Una sola richiesta bulk per tutti i ticker — nessun blocco IP."""
+    """FMP bulk quote — 1 richiesta per tutti i ticker USA.
+    Piano gratuito: 250 req/giorno, nessun limite/minuto, nessun blocco IP."""
     results = {}
-    if not tickers or not TWELVE_DATA_KEY:
+    if not tickers or not FMP_API_KEY:
         return results
-    # Twelve Data accetta max 120 simboli per richiesta
-    for i in range(0, len(tickers), 100):
-        batch = tickers[i:i+100]
-        symbols = ",".join(batch)
-        try:
-            r = requests.get(
-                f"{TWELVE_DATA_URL}/eod",
-                params={
-                    "symbol":   symbols,
-                    "apikey":   TWELVE_DATA_KEY,
-                    "dp":       2,
-                    "order":    "desc",
-                    "outputsize": 2,
-                },
-                timeout=30
-            )
-            if not r.ok:
-                log.error(f"Twelve Data HTTP {r.status_code}")
-                continue
-            data = r.json()
-            # Risposta: {"AAPL": {"values": [{"close": ...}, ...]}, ...}
-            if isinstance(data, dict):
-                for ticker in batch:
-                    ticker_data = data.get(ticker, {})
-                    if ticker_data.get("status") == "error":
-                        continue
-                    values = ticker_data.get("values", [])
-                    if len(values) >= 2:
-                        p_curr = float(values[0]["close"])
-                        p_prev = float(values[1]["close"])
-                        if p_prev > 0:
-                            results[ticker] = {
-                                "price":      p_curr,
-                                "prev_close": p_prev,
-                                "change_pct": (p_curr - p_prev) / p_prev * 100
-                            }
-        except Exception as e:
-            log.error(f"get_prices_batch error: {e}")
-        time.sleep(1)
+    us_tickers = [t for t in tickers if "." not in t]
+    if not us_tickers:
+        return results
+    try:
+        symbols = ",".join(us_tickers)
+        r = requests.get(
+            f"{FMP_URL}/quote/{symbols}",
+            params={"apikey": FMP_API_KEY},
+            timeout=30
+        )
+        if not r.ok:
+            log.error(f"FMP HTTP {r.status_code}")
+            return results
+        data = r.json()
+        if isinstance(data, list):
+            for q in data:
+                ticker = q.get("symbol", "")
+                price  = float(q.get("price", 0) or 0)
+                prev   = float(q.get("previousClose", 0) or 0)
+                change = float(q.get("changesPercentage", 0) or 0)
+                if ticker and price > 0:
+                    results[ticker] = {
+                        "price":      price,
+                        "prev_close": prev if prev else price,
+                        "change_pct": change
+                    }
+        log.info(f"FMP: {len(results)}/{len(us_tickers)} ticker")
+    except Exception as e:
+        log.error(f"FMP error: {e}")
     return results
-
 def get_intraday_batch(tickers):
-    """Scarica prezzi intraday via Twelve Data.
-    Endpoint /quote restituisce prezzo corrente + variazione giornaliera."""
-    results = {}
-    if not tickers or not TWELVE_DATA_KEY:
-        return results
-    for i in range(0, len(tickers), 100):
-        batch   = tickers[i:i+100]
-        symbols = ",".join(batch)
-        try:
-            r = requests.get(
-                f"{TWELVE_DATA_URL}/quote",
-                params={
-                    "symbol": symbols,
-                    "apikey": TWELVE_DATA_KEY,
-                    "dp":     2,
-                },
-                timeout=30
-            )
-            if not r.ok:
-                log.error(f"Twelve Data quote HTTP {r.status_code}")
-                continue
-            data = r.json()
-            if isinstance(data, dict):
-                for ticker in batch:
-                    q = data.get(ticker, {})
-                    if q.get("status") == "error":
-                        continue
-                    try:
-                        price      = float(q.get("close", 0))
-                        open_price = float(q.get("open", 0))
-                        pct_change = float(q.get("percent_change", 0))
-                        if price > 0:
-                            results[ticker] = {
-                                "price":      price,
-                                "open":       open_price,
-                                "change_pct": pct_change
-                            }
-                    except (TypeError, ValueError):
-                        pass
-        except Exception as e:
-            log.error(f"get_intraday_batch error: {e}")
-        time.sleep(1)
-    return results
+    """Alias di get_prices_batch — FMP usa lo stesso endpoint per prezzi real-time."""
+    return get_prices_batch(tickers)
 
 def get_portfolio_news(hours=8, tier_filter=None):
     """Cerca notizie per TUTTI i titoli di ogni PIE.
@@ -634,8 +582,9 @@ def check_price_alerts():
     now = datetime.now(timezone.utc)
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
-    log.info("Check prezzi tutti i ticker...")
-    prices = get_intraday_batch(ALL_TICKERS)
+    log.info("Check prezzi ticker USA...")
+    us_tickers = [t for t in ALL_TICKERS if "." not in t]
+    prices = get_intraday_batch(us_tickers)
 
     for ticker, data in prices.items():
         price = data.get("price", 0)
@@ -900,7 +849,7 @@ def get_internal_alternatives(ticker, pie_name):
 def run_full_portfolio_analysis():
     log.info("Analisi completa portafoglio in corso...")
     now = datetime.now(timezone.utc)
-    prices = get_prices_batch(ALL_TICKERS)
+    prices = get_prices_batch([t for t in ALL_TICKERS if "." not in t])
     ticker_metrics = {}
     for ticker, pdata in prices.items():
         if not pdata:
@@ -1015,7 +964,7 @@ def send_hourly_digest():
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
     log.info("Digest orario...")
-    prices = get_intraday_batch(ALL_TICKERS)
+    prices = get_intraday_batch([t for t in ALL_TICKERS if "." not in t])
     movers = sorted(
         [(t, d) for t, d in prices.items() if abs(d.get("change_pct", 0)) >= DIGEST_MOVE_PCT],
         key=lambda x: abs(x[1]["change_pct"]), reverse=True
@@ -1035,7 +984,7 @@ def send_hourly_digest():
 def send_evening_report():
     log.info("Report serale...")
     now = datetime.now(timezone.utc)
-    prices = get_prices_batch(ALL_TICKERS)
+    prices = get_prices_batch([t for t in ALL_TICKERS if "." not in t])
     gainers = sorted([(t,d) for t,d in prices.items() if d.get("change_pct",0)>0],
                      key=lambda x: x[1]["change_pct"], reverse=True)
     losers  = sorted([(t,d) for t,d in prices.items() if d.get("change_pct",0)<0],
@@ -1075,7 +1024,7 @@ def run_substitution_watchlist():
     """Controlla TUTTI i 99 ticker. Soglie per tier:
     T1 -15% | T2 -18% | T3 -12% | T4 -25%"""
     log.info("Check watchlist sostituzione tutti i ticker...")
-    prices = get_prices_batch(ALL_TICKERS)
+    prices = get_prices_batch([t for t in ALL_TICKERS if "." not in t])
     alerts_sent = 0
     for ticker, pdata in prices.items():
         if not pdata or alerts_sent >= 5:
@@ -1197,7 +1146,7 @@ def send_weekly_report():
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
     # Ogni minuto: prezzi + callback
-    schedule.every(5).minutes.do(check_price_alerts)  # 5 min = 288 req/giorno (limite free: 800)
+    schedule.every(6).minutes.do(check_price_alerts)  # 6 min = 240 req/giorno (FMP free: 250)
     schedule.every(1).minutes.do(check_callbacks)
     # Notizie: schema ottimale 93 richieste/giorno (limite 100)
     # 08:00 CET — scansione completa 35 query (apertura mercati EU)
