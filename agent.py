@@ -15,6 +15,40 @@ import requests
 import yfinance as yf
 import anthropic
 
+# ── Configura yfinance con headers browser reali ─────────────
+# Yahoo Finance blocca richieste automatizzate senza User-Agent
+# Questi header simulano Chrome su Windows — massima compatibilità
+_YF_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection":      "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+try:
+    import yfinance.data as _yfdata
+    _yfdata.YfData.HEADERS = _YF_HEADERS
+except Exception:
+    pass
+
+# Applica anche via requests Session su yfinance
+def _setup_yf_session():
+    try:
+        session = requests.Session()
+        session.headers.update(_YF_HEADERS)
+        yf.set_tz_cache_location("/tmp/yf_cache")
+        return session
+    except Exception:
+        return None
+
+_YF_SESSION = _setup_yf_session()
+
 # ── CONFIG ───────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_TOKEN", "")
@@ -485,7 +519,8 @@ def get_prices_batch(tickers):
         data = yf.download(
             tickers, period="3d", interval="1d",
             group_by="ticker", auto_adjust=True,
-            progress=False, threads=False
+            progress=False, threads=False,
+            session=_YF_SESSION
         )
         if data.empty:
             return results
@@ -511,7 +546,8 @@ def get_prices_batch(tickers):
             try:
                 data = yf.download(batch, period="3d", interval="1d",
                                    group_by="ticker", auto_adjust=True,
-                                   progress=False, threads=False)
+                                   progress=False, threads=False,
+                                   session=_YF_SESSION)
                 for ticker in batch:
                     try:
                         closes = data["Close"][ticker].dropna() if len(batch)>1 else data["Close"].dropna()
@@ -541,7 +577,8 @@ def get_intraday_batch(tickers):
         data = yf.download(
             tickers, period="1d", interval="1h",
             group_by="ticker", auto_adjust=True,
-            progress=False, threads=False
+            progress=False, threads=False,
+            session=_YF_SESSION
         )
         if data.empty:
             # Fallback a dati giornalieri se intraday non disponibile
@@ -650,6 +687,8 @@ def check_price_alerts():
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
     log.info("Check prezzi tutti i ticker...")
+    # Pausa casuale 2-5 secondi prima della richiesta — anti-fingerprinting
+    time.sleep(2 + (now.second % 3))
     prices = get_intraday_batch(ALL_TICKERS)
 
     for ticker, data in prices.items():
