@@ -24,7 +24,7 @@ NEWS_API_KEY      = os.environ.get("NEWS_API_KEY", "")
 ALERT_MOVE_PCT    = 3.0
 DIGEST_MOVE_PCT   = 1.5
 MARKET_OPEN       = 0   # Tokyo apre 00:00 UTC
-MARKET_CLOSE      = 22  # NYSE chiude 21:00 UTC, buffer fino 22:00
+MARKET_CLOSE      = 23  # Copertura completa tutti i mercati mondiali
 DIGEST_HOUR       = [10, 12, 14, 16]
 REPORT_HOUR       = 18
 BATCH_SIZE        = 10
@@ -477,83 +477,93 @@ def check_callbacks():
 
 # ── PREZZI ───────────────────────────────────────────────────
 def get_prices_batch(tickers):
+    """Scarica prezzi in UNA sola chiamata bulk — anti rate-limiting."""
     results = {}
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        try:
-            if len(batch) == 1:
-                obj = yf.Ticker(batch[0])
-                hist = obj.history(period="2d")
-                if len(hist) >= 2:
-                    results[batch[0]] = {
-                        "price": float(hist["Close"].iloc[-1]),
-                        "prev_close": float(hist["Close"].iloc[-2]),
-                        "change_pct": float((hist["Close"].iloc[-1] - hist["Close"].iloc[-2]) / hist["Close"].iloc[-2] * 100)
-                    }
-            else:
-                data = yf.download(batch, period="2d", interval="1d",
-                                   group_by="ticker", auto_adjust=True,
-                                   progress=False, threads=False)
-                for ticker in batch:
-                    try:
-                        closes = data["Close"][ticker].dropna() if len(batch) > 1 else data["Close"].dropna()
-                        if len(closes) >= 2:
-                            results[ticker] = {
-                                "price": float(closes.iloc[-1]),
-                                "prev_close": float(closes.iloc[-2]),
-                                "change_pct": float((closes.iloc[-1] - closes.iloc[-2]) / closes.iloc[-2] * 100)
-                            }
-                    except Exception:
-                        pass
-        except Exception as e:
-            log.error(f"Batch error {batch}: {e}")
-        time.sleep(1)
-    return results
-
-def get_intraday_batch(tickers):
-    """Scarica prezzi intraday per tutti i ticker — US, EU, Asia, EM.
-    Yahoo Finance gestisce automaticamente i fusi orari per ogni mercato."""
-    results = {}
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        try:
-            if len(batch) == 1:
-                obj = yf.Ticker(batch[0])
-                # period=5d per catturare anche mercati con seduta diversa
-                hist = obj.history(period="2d", interval="5m")
-                if len(hist) >= 2:
-                    open_p = float(hist["Close"].iloc[0])
-                    curr   = float(hist["Close"].iloc[-1])
-                    if open_p > 0:
-                        results[batch[0]] = {
-                            "price":      curr,
-                            "open":       open_p,
-                            "change_pct": (curr - open_p) / open_p * 100
+    if not tickers:
+        return results
+    try:
+        data = yf.download(
+            tickers, period="3d", interval="1d",
+            group_by="ticker", auto_adjust=True,
+            progress=False, threads=False
+        )
+        if data.empty:
+            return results
+        for ticker in tickers:
+            try:
+                closes = data["Close"][ticker].dropna() if len(tickers) > 1 else data["Close"].dropna()
+                if len(closes) >= 2:
+                    p_curr = float(closes.iloc[-1])
+                    p_prev = float(closes.iloc[-2])
+                    if p_prev > 0:
+                        results[ticker] = {
+                            "price":      p_curr,
+                            "prev_close": p_prev,
+                            "change_pct": (p_curr - p_prev) / p_prev * 100
                         }
-            else:
-                data = yf.download(batch, period="2d", interval="5m",
+            except Exception:
+                pass
+    except Exception as e:
+        log.error(f"get_prices_batch error: {e}")
+        # Fallback in mini-batch da 20
+        for i in range(0, len(tickers), 20):
+            batch = tickers[i:i+20]
+            try:
+                data = yf.download(batch, period="3d", interval="1d",
                                    group_by="ticker", auto_adjust=True,
                                    progress=False, threads=False)
                 for ticker in batch:
                     try:
-                        if len(batch) == 1:
-                            closes = data["Close"].dropna()
-                        else:
-                            closes = data["Close"][ticker].dropna()
+                        closes = data["Close"][ticker].dropna() if len(batch)>1 else data["Close"].dropna()
                         if len(closes) >= 2:
-                            op = float(closes.iloc[0])
-                            cp = float(closes.iloc[-1])
-                            if op > 0:
+                            p_curr = float(closes.iloc[-1])
+                            p_prev = float(closes.iloc[-2])
+                            if p_prev > 0:
                                 results[ticker] = {
-                                    "price":      cp,
-                                    "open":       op,
-                                    "change_pct": (cp - op) / op * 100
+                                    "price": p_curr, "prev_close": p_prev,
+                                    "change_pct": (p_curr - p_prev) / p_prev * 100
                                 }
                     except Exception:
                         pass
-        except Exception as e:
-            log.error(f"Intraday error {batch}: {e}")
-        time.sleep(1)
+            except Exception as e2:
+                log.error(f"Fallback error: {e2}")
+            time.sleep(3)
+    return results
+def get_intraday_batch(tickers):
+    """Scarica prezzi intraday in UNA sola chiamata bulk.
+    Usa period=1d interval=1h per bilanciare granularita e rate limiting.
+    Meno richieste = meno blocchi da Yahoo Finance."""
+    results = {}
+    if not tickers:
+        return results
+    try:
+        # Una sola chiamata per tutti i ticker
+        data = yf.download(
+            tickers, period="1d", interval="1h",
+            group_by="ticker", auto_adjust=True,
+            progress=False, threads=False
+        )
+        if data.empty:
+            # Fallback a dati giornalieri se intraday non disponibile
+            return get_prices_batch(tickers)
+        for ticker in tickers:
+            try:
+                closes = data["Close"][ticker].dropna() if len(tickers)>1 else data["Close"].dropna()
+                if len(closes) >= 2:
+                    op = float(closes.iloc[0])
+                    cp = float(closes.iloc[-1])
+                    if op > 0:
+                        results[ticker] = {
+                            "price":      cp,
+                            "open":       op,
+                            "change_pct": (cp - op) / op * 100
+                        }
+            except Exception:
+                pass
+    except Exception as e:
+        log.error(f"get_intraday_batch error: {e}")
+        # Fallback ai dati giornalieri
+        return get_prices_batch(tickers)
     return results
 
 # ── NOTIZIE ──────────────────────────────────────────────────
