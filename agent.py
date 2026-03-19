@@ -583,29 +583,46 @@ def get_news(query, hours=4, max_articles=3):
         log.error(f"NewsAPI error: {e}")
     return []
 
-def get_portfolio_news(hours=2):
-    """Cerca notizie per TUTTI i ticker del portafoglio.
-    Raggruppa le query per evitare rate limiting NewsAPI (100 req/giorno piano free).
-    Strategia: query per nome azienda, max 2 articoli per ticker, pausa 0.5s."""
+def get_portfolio_news(hours=8, tier_filter=None):
+    """Cerca notizie per TUTTI i titoli di ogni PIE.
+    2 query per PIE (4 ticker per query) = 35 query per scansione completa.
+    tier_filter: se impostato, scansiona solo i PIE di quel tier (es. [1,2]).
+    Budget: 35+35+23 = 93 richieste/giorno su 100 disponibili."""
     news_by_ticker = {}
-    # Usa tutti i ticker che hanno un nome leggibile nel dizionario
-    all_named = [(t, TICKER_NAMES.get(t, "")) for t in ALL_TICKERS if TICKER_NAMES.get(t, "")]
-    # Ordine: prima tier 1 e 2 (piu critici), poi tier 3 e 4
-    def tier_order(item):
-        ticker = item[0]
-        pies   = TICKER_TO_PIE.get(ticker, [])
-        if not pies:
-            return 99
-        return PORTFOLIO.get(pies[0], {}).get("tier", 99)
-    all_named.sort(key=tier_order)
 
-    for ticker, name in all_named:
-        if not name:
+    for pie_name, pie_data in PORTFOLIO.items():
+        # Filtra per tier se richiesto
+        if tier_filter and pie_data.get("tier") not in tier_filter:
             continue
-        articles = get_news(f'"{name}" stock', hours=hours, max_articles=2)
-        if articles:
-            news_by_ticker[ticker] = articles
-        time.sleep(0.5)  # rispetta rate limit NewsAPI
+
+        tickers = pie_data["tickers"]
+
+        # Suddividi i ticker del PIE in gruppi da 4
+        for i in range(0, len(tickers), 4):
+            group   = tickers[i:i+4]
+            names   = [TICKER_NAMES.get(t, "") for t in group if TICKER_NAMES.get(t, "")]
+            if not names:
+                continue
+
+            # Query: "Air Liquide" OR "Nestle" OR "L Oreal" OR "Sika" stock
+            query    = " OR ".join([f'"{n}"' for n in names]) + " stock"
+            articles = get_news(query, hours=hours, max_articles=5)
+
+            if articles:
+                for article in articles:
+                    title_lower = article["title"].lower()
+                    matched     = False
+                    # Associa al ticker corretto cercando il nome nel titolo
+                    for ticker in group:
+                        name = TICKER_NAMES.get(ticker, "").lower()
+                        if name and any(w in title_lower for w in name.split()):
+                            news_by_ticker.setdefault(ticker, []).append(article)
+                            matched = True
+                            break
+                    if not matched:
+                        news_by_ticker.setdefault(group[0], []).append(article)
+            time.sleep(1)
+
     return news_by_ticker
 
 # ── CLAUDE ───────────────────────────────────────────────────
@@ -787,10 +804,13 @@ def send_substitution_recommendation(ticker, watch_data, drawdown, price):
     send_telegram_with_buttons(msg, buttons)
 
 # ── MODULO 4 — RACCOMANDAZIONI OPERATIVE DA NOTIZIE ──────────
-def check_news_and_recommend():
-    """Analizza notizie e genera raccomandazioni operative se necessario"""
-    log.info("Check notizie e raccomandazioni...")
-    news = get_portfolio_news(hours=1)
+def check_news_and_recommend(tier_filter=None):
+    """Analizza notizie e genera raccomandazioni operative se necessario.
+    tier_filter=None -> scansione completa tutti i PIE (35 query)
+    tier_filter=[1,2] -> solo tier 1 e 2 (23 query) per la scansione serale"""
+    label = f"tier {tier_filter}" if tier_filter else "completo"
+    log.info(f"Check notizie {label}...")
+    news = get_portfolio_news(hours=8, tier_filter=tier_filter)
     keywords_critical = ["dividend cut", "dividend suspended", "bankruptcy",
                          "fraud", "ceo resign", "profit warning", "downgrade",
                          "miss", "guidance cut", "taglio dividendo"]
@@ -1194,8 +1214,15 @@ def run_scheduler():
     # Ogni minuto: prezzi + callback
     schedule.every(1).minutes.do(check_price_alerts)
     schedule.every(1).minutes.do(check_callbacks)
-    # Ogni 30 min: notizie + raccomandazioni
-    schedule.every(30).minutes.do(check_news_and_recommend)
+    # Notizie: schema ottimale 93 richieste/giorno (limite 100)
+    # 08:00 CET — scansione completa 35 query (apertura mercati EU)
+    # 16:00 CET — scansione completa 35 query (apertura NYSE)
+    # 20:00 CET — scansione parziale 23 query tier 1+2 (chiusura NYSE)
+    schedule.every().day.at("08:00").do(check_news_and_recommend)
+    schedule.every().day.at("16:00").do(check_news_and_recommend)
+    schedule.every().day.at("20:00").do(
+        lambda: check_news_and_recommend(tier_filter=[1, 2])
+    )
     # Digest orari
     for h in DIGEST_HOUR:
         schedule.every().day.at(f"{h:02d}:00").do(send_hourly_digest)
