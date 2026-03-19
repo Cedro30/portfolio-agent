@@ -470,6 +470,116 @@ def send_sunday_deep_analysis():
     else:
         send_with_buttons(msg, buttons)
 
+
+# ── ROTAZIONE PIE GIORNALIERA ────────────────────────────────
+DAILY_ROTATION = {
+    0: {
+        "label": "PIE01 Aristocrats USA + PIE02 Aristocrats EU + PIE03 Aristocrats Asia",
+        "titoli": ["Procter & Gamble","Johnson & Johnson","Coca-Cola","PepsiCo","Abbott","Medtronic","Walmart","Emerson Electric","Air Liquide","Nestle","L Oreal","Sika","Wolters Kluwer","Dassault Systemes","Linde","DBS Group","Toyota","Sony","Commonwealth Bank Australia"]
+    },
+    1: {
+        "label": "PIE04 Champions Energia + PIE05 Champions Finanza + PIE06 REIT Growth",
+        "titoli": ["ExxonMobil","Chevron","Williams Companies","Enbridge","TotalEnergies","EOG Resources","Constellation Energy","HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie","Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water Works"]
+    },
+    2: {
+        "label": "PIE07 Quality Tech + PIE08 Quality Lusso + PIE09 Quality Healthcare",
+        "titoli": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Johnson & Johnson","Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth"]
+    },
+    3: {
+        "label": "PIE10 Quality Difesa + PIE11 Quality Chip + PIE12 Quality Infrastrutture",
+        "titoli": ["Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung Electronics","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink"]
+    },
+    4: {
+        "label": "PIE13 Utility Nucleare + PIE14 Consumer Staples + PIE15 Gas Industriali + PIE16 Midstream Pipeline",
+        "titoli": ["Constellation Energy","Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy","Coca-Cola","PepsiCo","Unilever","Costco","Air Liquide","Linde","Sika","Sherwin-Williams","Air Products","Williams Companies","Enbridge","Kinder Morgan","TC Energy","PPL Corporation"]
+    },
+    5: None,
+    6: {
+        "label": "PIE17 AI Tech + PIE18 EM Growth + Revisione portafoglio completo",
+        "titoli": ["NVIDIA","Alphabet","Meta","Amazon","AMD","KWEB China Internet ETF","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"]
+    }
+}
+
+def send_daily_pie_analysis():
+    """Analisi giornaliera dei PIE in rotazione settimanale."""
+    now = datetime.now(timezone.utc)
+    weekday = now.weekday()
+    rotation = DAILY_ROTATION.get(weekday)
+
+    if not rotation:
+        log.info("Sabato — nessuna analisi PIE.")
+        return
+
+    label = rotation["label"]
+    titoli = rotation["titoli"]
+    log.info(f"Analisi PIE giornaliera: {label}")
+
+    is_sunday = weekday == 6
+    is_friday = weekday == 4
+
+    if is_sunday:
+        extra = (
+            "Dopo aver analizzato i PIE17 e PIE18, produci una REVISIONE COMPLETA del portafoglio: "
+            "valutazione complessiva 1-5 stelle, i 3 titoli piu solidi e i 3 piu a rischio, "
+            "raccomandazione strategica generale per le prossime 2 settimane."
+        )
+    elif is_friday:
+        extra = (
+            "Essendo venerdi, aggiungi un bilancio settimanale per questi PIE: "
+            "la settimana e stata positiva o negativa per il gruppo? "
+            "Outlook per la prossima settimana."
+        )
+    else:
+        extra = ""
+
+    prompt = (
+        f"Oggi e {now.strftime('%A %d/%m/%Y')}. "
+        f"Analisi giornaliera del Factor Portfolio — {label}.\n\n"
+        f"Cerca le ultime notizie su questi titoli: {', '.join(titoli)}.\n\n"
+        f"Per ogni titolo che ha notizie rilevanti analizza:\n"
+        f"• Cosa e successo\n"
+        f"• Impatto sulla tesi dividend growth/quality\n"
+        f"• Azione consigliata (mantieni / monitora / aggiusta peso quando investi)\n\n"
+        f"Per i titoli senza notizie rilevanti scrivi solo: [Nessuna novita — tesi confermata]\n\n"
+        f"Struttura finale:\n"
+        f"1. SINTESI: 2 righe sul gruppo di PIE oggi\n"
+        f"2. TITOLI IN EVIDENZA: solo quelli con notizie rilevanti\n"
+        f"3. TUTTI GLI ALTRI: lista rapida con stato\n"
+        f"4. CONSIGLIO OPERATIVO: azione concreta se necessaria per T212\n"
+        f"{extra}"
+    )
+
+    analysis = claude_with_search(prompt, max_tokens=2000)
+    if not analysis:
+        log.error("Analisi PIE giornaliera fallita")
+        return
+
+    icon = "🔬" if is_sunday else ("📊" if is_friday else "📋")
+    msg = (
+        f"{icon} <b>ANALISI PIE — {label}</b>\n"
+        f"<i>{now.strftime('%d/%m/%Y')}</i>\n\n"
+        f"{analysis}\n\n"
+        f"<i>Factor Portfolio · Claude + Web Search</i>"
+    )
+
+    if any(kw in analysis.lower() for kw in ["consiglio operativo", "aggiusta", "riduci", "aumenta", "sostituisci"]):
+        rec_id = save_recommendation("daily_pie_analysis", analysis)
+        buttons = [[
+            {"text": "✅ Vedi istruzioni T212", "data": f"approve_{rec_id}"},
+            {"text": "❌ Solo nota", "data": f"reject_{rec_id}"}
+        ]]
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...")
+            send_with_buttons("..." + msg[4000:], buttons)
+        else:
+            send_with_buttons(msg, buttons)
+    else:
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...")
+            send_telegram("..." + msg[4000:])
+        else:
+            send_telegram(msg)
+
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
     # Briefing mattutino — apertura mercati EU
@@ -482,6 +592,8 @@ def run_scheduler():
     schedule.every().monday.at("06:30").do(send_weekly_outlook)
     # Analisi fondamentale — domenica
     schedule.every().sunday.at("09:00").do(send_sunday_deep_analysis)
+    # Analisi PIE giornaliera in rotazione — 17:00 CET
+    schedule.every().day.at("15:00").do(send_daily_pie_analysis)
     # Callback bottoni Telegram — ogni minuto
     schedule.every(1).minutes.do(check_callbacks)
     # Pulizia database — ogni notte
