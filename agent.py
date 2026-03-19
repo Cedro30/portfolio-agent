@@ -571,14 +571,28 @@ def get_news(query, hours=4, max_articles=3):
     return []
 
 def get_portfolio_news(hours=2):
-    priority = ["NVDA","MSFT","ASML","GOOGL","META","AMZN","XOM","CVX","LMT","JNJ","LLY","TSM"]
+    """Cerca notizie per TUTTI i ticker del portafoglio.
+    Raggruppa le query per evitare rate limiting NewsAPI (100 req/giorno piano free).
+    Strategia: query per nome azienda, max 2 articoli per ticker, pausa 0.5s."""
     news_by_ticker = {}
-    for ticker in priority:
-        name = TICKER_NAMES.get(ticker, ticker)
-        articles = get_news(f'"{name}" stock dividend', hours=hours, max_articles=2)
+    # Usa tutti i ticker che hanno un nome leggibile nel dizionario
+    all_named = [(t, TICKER_NAMES.get(t, "")) for t in ALL_TICKERS if TICKER_NAMES.get(t, "")]
+    # Ordine: prima tier 1 e 2 (piu critici), poi tier 3 e 4
+    def tier_order(item):
+        ticker = item[0]
+        pies   = TICKER_TO_PIE.get(ticker, [])
+        if not pies:
+            return 99
+        return PORTFOLIO.get(pies[0], {}).get("tier", 99)
+    all_named.sort(key=tier_order)
+
+    for ticker, name in all_named:
+        if not name:
+            continue
+        articles = get_news(f'"{name}" stock', hours=hours, max_articles=2)
         if articles:
             news_by_ticker[ticker] = articles
-        time.sleep(0.5)
+        time.sleep(0.5)  # rispetta rate limit NewsAPI
     return news_by_ticker
 
 # ── CLAUDE ───────────────────────────────────────────────────
@@ -792,28 +806,38 @@ def check_news_and_recommend():
                          "fraud", "ceo resign", "profit warning", "downgrade",
                          "miss", "guidance cut", "taglio dividendo"]
 
+    critical_count = 0
+    normal_msgs    = []
+
     for ticker, articles in news.items():
         for article in articles:
             title_lower = article["title"].lower()
             is_critical = any(kw in title_lower for kw in keywords_critical)
-
-            hash_key = hashlib.md5(article["title"].encode()).hexdigest()
+            hash_key    = hashlib.md5(article["title"].encode()).hexdigest()
             if alert_already_sent(hash_key, hours=12):
                 continue
             mark_alert_sent(hash_key, ticker, "news")
 
             if is_critical:
-                send_critical_news_recommendation(ticker, article)
+                # Alert critici: invia subito uno per uno (max 5 per ciclo)
+                if critical_count < 5:
+                    send_critical_news_recommendation(ticker, article)
+                    critical_count += 1
+                    time.sleep(2)
             else:
-                # Notizia normale — solo info
+                # Notizie normali: raggruppa in un digest per evitare spam
                 name = TICKER_NAMES.get(ticker, ticker)
                 pie  = TICKER_TO_PIE.get(ticker, ["N/A"])[0].replace("_", " ")
-                send_telegram(
-                    f"📰 <b>NOTIZIA</b>\n\n"
-                    f"<b>{name}</b> ({ticker})\n"
-                    f"{article['title']}\n"
-                    f"<i>{article['source']} · {pie}</i>"
-                )
+                normal_msgs.append(f"• <b>{name}</b>: {article['title'][:70]}...")
+
+    # Invia digest notizie normali (max 10 per messaggio)
+    if normal_msgs:
+        for i in range(0, min(len(normal_msgs), 20), 10):
+            batch = normal_msgs[i:i+10]
+            send_telegram(
+                "📰 <b>NOTIZIE PORTAFOGLIO</b>\n\n"
+                + "\n".join(batch)
+            )
             time.sleep(2)
 
 def send_critical_news_recommendation(ticker, article):
