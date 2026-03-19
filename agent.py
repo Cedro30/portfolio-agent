@@ -477,42 +477,41 @@ def check_callbacks():
 
 # ── PREZZI ───────────────────────────────────────────────────
 def get_prices_batch(tickers):
-    """FMP quote — batch da 5 ticker, compatibile piano gratuito.
-    62 ticker = 13 batch = 13 richieste per ciclo ogni 6 minuti."""
+    """FMP stable/quote — un ticker per richiesta, nuovo formato API 2025+.
+    Campi: price, changePercentage, previousClose.
+    62 ticker = 62 richieste ma budget 250/giorno gestito con check ogni 75 min."""
     results = {}
     if not tickers or not FMP_API_KEY:
         return results
     us_tickers = [t for t in tickers if "." not in t]
     if not us_tickers:
         return results
-    for i in range(0, len(us_tickers), 5):
-        batch   = us_tickers[i:i+5]
-        symbols = ",".join(batch)
+    for ticker in us_tickers:
         try:
             r = requests.get(
-                f"{FMP_URL}/quote/{symbols}",
-                params={"apikey": FMP_API_KEY},
-                timeout=15
+                f"{FMP_URL}/quote",
+                params={"symbol": ticker, "apikey": FMP_API_KEY},
+                timeout=10
             )
             if r.ok:
                 data = r.json()
-                if isinstance(data, list):
-                    for q in data:
-                        ticker = q.get("symbol", "")
-                        price  = float(q.get("price", 0) or 0)
-                        prev   = float(q.get("previousClose", 0) or 0)
-                        change = float(q.get("changesPercentage", 0) or 0)
-                        if ticker and price > 0:
-                            results[ticker] = {
-                                "price":      price,
-                                "prev_close": prev if prev else price,
-                                "change_pct": change
-                            }
+                # Risposta e una lista con un elemento
+                if isinstance(data, list) and len(data) > 0:
+                    q      = data[0]
+                    price  = float(q.get("price", 0) or 0)
+                    prev   = float(q.get("previousClose", 0) or 0)
+                    change = float(q.get("changePercentage", 0) or 0)
+                    if price > 0:
+                        results[ticker] = {
+                            "price":      price,
+                            "prev_close": prev if prev else price,
+                            "change_pct": change
+                        }
             else:
-                log.error(f"FMP HTTP {r.status_code}")
+                log.error(f"FMP HTTP {r.status_code} per {ticker}")
         except Exception as e:
-            log.error(f"FMP error: {e}")
-        time.sleep(0.5)
+            log.error(f"FMP error {ticker}: {e}")
+        time.sleep(0.2)
     if results:
         log.info(f"FMP: {len(results)}/{len(us_tickers)} ticker")
     return results
@@ -1167,7 +1166,7 @@ def send_weekly_report():
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
     # Ogni minuto: prezzi + callback
-    schedule.every(75).minutes.do(check_price_alerts)  # 75 min = 19 cicli/giorno x 13 req = 247 req (limite FMP: 250)
+    schedule.every(360).minutes.do(check_price_alerts)  # 6 ore = 4 cicli/giorno x 62 req = 248 (limite: 250)
     schedule.every(1).minutes.do(check_callbacks)
     # Notizie: schema ottimale 93 richieste/giorno (limite 100)
     # 08:00 CET — scansione completa 35 query (apertura mercati EU)
