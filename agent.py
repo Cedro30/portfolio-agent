@@ -23,8 +23,8 @@ NEWS_API_KEY      = os.environ.get("NEWS_API_KEY", "")
 
 ALERT_MOVE_PCT    = 3.0
 DIGEST_MOVE_PCT   = 1.5
-MARKET_OPEN       = 8
-MARKET_CLOSE      = 22
+MARKET_OPEN       = 0   # Tokyo apre 00:00 UTC
+MARKET_CLOSE      = 22  # NYSE chiude 21:00 UTC, buffer fino 22:00
 DIGEST_HOUR       = [10, 12, 14, 16]
 REPORT_HOUR       = 18
 BATCH_SIZE        = 10
@@ -522,30 +522,44 @@ def get_prices_batch(tickers):
     return results
 
 def get_intraday_batch(tickers):
+    """Scarica prezzi intraday per tutti i ticker — US, EU, Asia, EM.
+    Yahoo Finance gestisce automaticamente i fusi orari per ogni mercato."""
     results = {}
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
         try:
             if len(batch) == 1:
                 obj = yf.Ticker(batch[0])
-                hist = obj.history(period="1d", interval="5m")
+                # period=5d per catturare anche mercati con seduta diversa
+                hist = obj.history(period="2d", interval="5m")
                 if len(hist) >= 2:
                     open_p = float(hist["Close"].iloc[0])
                     curr   = float(hist["Close"].iloc[-1])
-                    results[batch[0]] = {"price": curr, "open": open_p,
-                                          "change_pct": (curr - open_p) / open_p * 100}
+                    if open_p > 0:
+                        results[batch[0]] = {
+                            "price":      curr,
+                            "open":       open_p,
+                            "change_pct": (curr - open_p) / open_p * 100
+                        }
             else:
-                data = yf.download(batch, period="1d", interval="5m",
+                data = yf.download(batch, period="2d", interval="5m",
                                    group_by="ticker", auto_adjust=True,
                                    progress=False, threads=False)
                 for ticker in batch:
                     try:
-                        closes = data["Close"][ticker].dropna()
+                        if len(batch) == 1:
+                            closes = data["Close"].dropna()
+                        else:
+                            closes = data["Close"][ticker].dropna()
                         if len(closes) >= 2:
                             op = float(closes.iloc[0])
                             cp = float(closes.iloc[-1])
-                            results[ticker] = {"price": cp, "open": op,
-                                               "change_pct": (cp - op) / op * 100}
+                            if op > 0:
+                                results[ticker] = {
+                                    "price":      cp,
+                                    "open":       op,
+                                    "change_pct": (cp - op) / op * 100
+                                }
                     except Exception:
                         pass
         except Exception as e:
@@ -619,8 +633,8 @@ def check_price_alerts():
     now = datetime.now(timezone.utc)
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
-    log.info("Check prezzi...")
-    prices = get_intraday_batch(US_TICKERS)
+    log.info("Check prezzi tutti i ticker...")
+    prices = get_intraday_batch(ALL_TICKERS)
 
     for ticker, data in prices.items():
         price = data.get("price", 0)
@@ -906,7 +920,7 @@ def get_internal_alternatives(ticker, pie_name):
 def run_full_portfolio_analysis():
     log.info("Analisi completa portafoglio in corso...")
     now = datetime.now(timezone.utc)
-    prices = get_prices_batch(US_TICKERS)
+    prices = get_prices_batch(ALL_TICKERS)
     ticker_metrics = {}
     for ticker, pdata in prices.items():
         if not pdata:
@@ -1021,7 +1035,7 @@ def send_hourly_digest():
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
     log.info("Digest orario...")
-    prices = get_intraday_batch(US_TICKERS)
+    prices = get_intraday_batch(ALL_TICKERS)
     movers = sorted(
         [(t, d) for t, d in prices.items() if abs(d.get("change_pct", 0)) >= DIGEST_MOVE_PCT],
         key=lambda x: abs(x[1]["change_pct"]), reverse=True
@@ -1041,7 +1055,7 @@ def send_hourly_digest():
 def send_evening_report():
     log.info("Report serale...")
     now = datetime.now(timezone.utc)
-    prices = get_prices_batch(US_TICKERS[:25])
+    prices = get_prices_batch(ALL_TICKERS)
     gainers = sorted([(t,d) for t,d in prices.items() if d.get("change_pct",0)>0],
                      key=lambda x: x[1]["change_pct"], reverse=True)
     losers  = sorted([(t,d) for t,d in prices.items() if d.get("change_pct",0)<0],
