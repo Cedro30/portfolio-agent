@@ -158,26 +158,15 @@ TICKER_NAMES = {
     "IBN":"ICICI Bank","RELIANCE.NS":"Reliance Industries",
 }
 
-# Titoli in watchlist sostituzione con alternative suggerite
-SUBSTITUTION_WATCHLIST = {
-    "NOVOB.CO": {
-        "motivo": "Drawdown 44% YTD, pipeline in revisione",
-        "alternativa": "AZN",
-        "alt_name": "AstraZeneca",
-        "soglia_azione": -20.0
-    },
-    "EL": {
-        "motivo": "Calo strutturale mercato lusso beauty USA",
-        "alternativa": "OR.PA",
-        "alt_name": "L Oreal",
-        "soglia_azione": -15.0
-    },
-    "BAESY": {
-        "motivo": "Monitorare integrazione con nuovi contratti AUKUS",
-        "alternativa": "RTX",
-        "alt_name": "RTX Corp",
-        "soglia_azione": -20.0
-    },
+# Soglie drawdown dinamiche per watchlist automatica — tutti i ticker
+# Tier 1 e 2 (core): soglia piu alta perche sono posizioni principali
+# Tier 3 (low vol): soglia intermedia — utility e staples non dovrebbero scendere molto
+# Tier 4 (momentum): soglia piu bassa — piu volatili per natura
+DRAWDOWN_THRESHOLDS = {
+    1: -15.0,   # Dividend Aristocrats — alert a -15% (streak 25-68 anni, raramente scendono cosi)
+    2: -20.0,   # Quality Compounders — alert a -20% (beta piu alto, oscillazioni normali fino -15%)
+    3: -10.0,   # Low Volatility — alert a -10% (utility/staples/pipeline: devono essere stabili)
+    4: -30.0,   # Momentum Growth — alert a -30% (NVDA/META/AMD: -25% e correzione normale)
 }
 
 # ── DATABASE ─────────────────────────────────────────────────
@@ -744,30 +733,6 @@ def send_rebalancing_recommendation(pies, now):
     send_telegram_with_buttons(msg, buttons)
 
 # ── MODULO 3 — WATCHLIST SOSTITUZIONE ────────────────────────
-def run_substitution_watchlist():
-    """Controlla ogni giorno i titoli in watchlist sostituzione"""
-    log.info("Check watchlist sostituzione...")
-    prices = get_prices_batch(list(SUBSTITUTION_WATCHLIST.keys()))
-
-    for ticker, watch_data in SUBSTITUTION_WATCHLIST.items():
-        if ticker not in prices:
-            continue
-        price     = prices[ticker]["price"]
-        change    = prices[ticker]["change_pct"]
-        max_price = get_max_price(ticker, days=90)
-
-        if not max_price:
-            save_price(ticker, price)
-            continue
-
-        drawdown = (price - max_price) / max_price * 100
-        soglia   = watch_data["soglia_azione"]
-
-        if drawdown <= soglia:
-            hash_key = hashlib.md5(f"subst_{ticker}_{round(drawdown)}".encode()).hexdigest()
-            if not alert_already_sent(hash_key, hours=72):
-                mark_alert_sent(hash_key, ticker, "substitution")
-                send_substitution_recommendation(ticker, watch_data, drawdown, price)
 
 def send_substitution_recommendation(ticker, watch_data, drawdown, price):
     """Genera raccomandazione di sostituzione con bottoni"""
@@ -1090,6 +1055,101 @@ def send_evening_report():
         time.sleep(3)
         run_full_portfolio_analysis()
 
+# ── MODULO 4 — WATCHLIST SOSTITUZIONE DINAMICA ───────────────
+def run_substitution_watchlist():
+    """Controlla TUTTI i 99 ticker. Soglie per tier:
+    T1 -15% | T2 -18% | T3 -12% | T4 -25%"""
+    log.info("Check watchlist sostituzione tutti i ticker...")
+    prices = get_prices_batch(ALL_TICKERS)
+    alerts_sent = 0
+    for ticker, pdata in prices.items():
+        if not pdata or alerts_sent >= 5:
+            break
+        price     = pdata.get("price", 0)
+        max_price = get_max_price(ticker, days=90)
+        if price > 0:
+            save_price(ticker, price)
+        if not max_price or max_price <= 0:
+            continue
+        drawdown = (price - max_price) / max_price * 100
+        pies     = TICKER_TO_PIE.get(ticker, [])
+        tier     = PORTFOLIO.get(pies[0], {}).get("tier", 2) if pies else 2
+        soglia   = DRAWDOWN_THRESHOLDS.get(tier, -18.0)
+        if drawdown <= soglia:
+            hash_key = hashlib.md5(
+                f"watch_{ticker}_{round(drawdown/5)*5}".encode()
+            ).hexdigest()
+            if not alert_already_sent(hash_key, hours=72):
+                mark_alert_sent(hash_key, ticker, "watchlist")
+                send_watchlist_alert(ticker, drawdown, price, tier, pies)
+                alerts_sent += 1
+                time.sleep(2)
+
+def send_watchlist_alert(ticker, drawdown, price, tier, pies):
+    """Alert watchlist con analisi interna/esterna"""
+    name      = TICKER_NAMES.get(ticker, ticker)
+    pie_name  = pies[0] if pies else "N/A"
+    pie_label = pie_name.replace("_", " ")
+    port_w    = get_ticker_portfolio_weight(ticker)
+    pie_w     = get_ticker_pie_weight(ticker, pie_name)
+    alts      = get_internal_alternatives(ticker, pie_name)
+    alts_names = ", ".join([TICKER_NAMES.get(t, t) for t in alts[:3]])
+    tier_labels = {1:"Dividend Aristocrat",2:"Quality Compounder",
+                   3:"Low Volatility",4:"Momentum Growth"}
+    soglia = DRAWDOWN_THRESHOLDS.get(tier, -18.0)
+    prompt = (
+        "Watchlist alert: " + name + " (" + ticker + ")\n"
+        + "Tier: " + tier_labels.get(tier, str(tier)) + "\n"
+        + "Drawdown 90gg: " + f"{drawdown:.1f}%" + " (soglia tier: " + f"{soglia:.0f}%" + ")\n"
+        + "Peso portafoglio: " + f"{port_w:.2f}%" + "\n"
+        + "Peso nel PIE: " + f"{pie_w:.1f}%" + "\n"
+        + "Gia nel PIE: " + (alts_names if alts_names else "nessuno") + "\n\n"
+        + "ANALISI: 1) Drawdown strutturale o temporaneo? "
+        + "2) Tesi dividend growth valida? "
+        + "3) Prima considera ribilancio interno. "
+        + "4) Solo se necessario: titolo esterno NON in portafoglio. "
+        + "5) Azione: MANTIENI / RIDUCI-PESO / RIBILANCIA-INTERNO / SOSTITUISCI-ESTERNO"
+    )
+    analysis = ask_claude(prompt, max_tokens=400)
+    if not analysis:
+        return
+    al = analysis.lower()
+    if "sostituisci-esterno" in al:
+        rec_type = "SOSTITUZIONE ESTERNA"
+        btn_ok   = "Vedi istruzioni"
+    elif "ribilancia-interno" in al:
+        rec_type = "RIBILANCIO INTERNO"
+        btn_ok   = "Vedi istruzioni"
+    elif "riduci-peso" in al:
+        rec_type = "RIDUCI PESO"
+        btn_ok   = "Vedi istruzioni"
+    else:
+        rec_type = "MONITORA"
+        btn_ok   = "Prendi nota"
+    details = (
+        "PIE: " + pie_label + "\n"
+        + "Titolo: " + name + " (" + ticker + ")\n"
+        + "Peso PIE: " + f"{pie_w:.1f}%" + " | Portafoglio: " + f"{port_w:.2f}%" + "\n"
+        + ("Interni: " + alts_names + "\n" if alts_names else "")
+        + "\nSu T212: apri il PIE, segui l analisi, ribilancia."
+    )
+    rec_id = save_recommendation("watchlist", ticker, pie_label, rec_type, details)
+    msg = (
+        "⚠️ <b>WATCHLIST — " + rec_type + "</b>\n\n"
+        + "<b>" + name + "</b> (" + ticker + ") · Tier " + str(tier) + "\n"
+        + "PIE: <i>" + pie_label + "</i>\n\n"
+        + "📊 Drawdown 90gg: <b>" + f"{drawdown:.1f}%" + "</b> (soglia " + f"{soglia:.0f}%" + ")\n"
+        + "⚖️ Peso portafoglio: <b>" + f"{port_w:.2f}%" + "</b>\n"
+        + ("\n🔄 <b>Gia nel PIE:</b> " + alts_names + "\n" if alts_names else "")
+        + "\n🤖 " + analysis
+        + "\n\n<i>Come vuoi procedere?</i>"
+    )
+    buttons = [[
+        {"text": "✅ " + btn_ok, "data": "approve_" + str(rec_id)},
+        {"text": "❌ Mantieni", "data": "reject_" + str(rec_id)}
+    ]]
+    send_telegram_with_buttons(msg, buttons)
+
 # ── REPORT SETTIMANALE ────────────────────────────────────────
 def send_weekly_report():
     now = datetime.now(timezone.utc)
@@ -1110,8 +1170,6 @@ def send_weekly_report():
     time.sleep(2)
     # Ribilanciamento settimanale
     run_rebalancing_check()
-    # Watchlist sostituzioni
-    run_substitution_watchlist()
     time.sleep(5)
     # Analisi completa ogni domenica
     if now.weekday() == 6:
@@ -1135,6 +1193,8 @@ def run_scheduler():
     schedule.every().day.at(f"{REPORT_HOUR:02d}:30").do(send_evening_report)
     # Settimanale lunedi 07:00 UTC
     schedule.every().monday.at("07:00").do(send_weekly_report)
+    # Watchlist sostituzione: tutti i giorni alle 06:00 UTC (prima apertura mercati)
+    schedule.every().day.at("06:00").do(run_substitution_watchlist)
     # Pulizia notturna
     schedule.every().day.at("02:00").do(cleanup_old_data)
 
@@ -1166,5 +1226,5 @@ if __name__ == "__main__":
         log.info("Portfolio caricato da configurazione locale")
     log.info(f"Ticker monitorati: {len(ALL_TICKERS)}")
     log.info(f"Ticker US: {len(US_TICKERS)}")
-    log.info(f"Watchlist sostituzione: {len(SUBSTITUTION_WATCHLIST)} titoli")
+    log.info(f"Modulo watchlist: soglie dinamiche per tier su tutti i ticker")
     run_scheduler()
