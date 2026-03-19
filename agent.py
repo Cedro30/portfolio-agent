@@ -12,43 +12,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 import schedule
 import requests
-import yfinance as yf
 import anthropic
-
-# ── Configura yfinance con headers browser reali ─────────────
-# Yahoo Finance blocca richieste automatizzate senza User-Agent
-# Questi header simulano Chrome su Windows — massima compatibilità
-_YF_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection":      "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
-
-try:
-    import yfinance.data as _yfdata
-    _yfdata.YfData.HEADERS = _YF_HEADERS
-except Exception:
-    pass
-
-# Applica anche via requests Session su yfinance
-def _setup_yf_session():
-    try:
-        session = requests.Session()
-        session.headers.update(_YF_HEADERS)
-        yf.set_tz_cache_location("/tmp/yf_cache")
-        return session
-    except Exception:
-        return None
-
-_YF_SESSION = _setup_yf_session()
-
 # ── CONFIG ───────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_TOKEN", "")
@@ -62,7 +26,9 @@ MARKET_CLOSE      = 23  # Copertura completa tutti i mercati mondiali
 DIGEST_HOUR       = [10, 12, 14, 16]
 REPORT_HOUR       = 18
 BATCH_SIZE        = 10
-GITHUB_TOKEN      = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_TOKEN       = os.environ.get("GITHUB_TOKEN", "")
+TWELVE_DATA_KEY    = os.environ.get("TWELVE_DATA_KEY", "")
+TWELVE_DATA_URL    = "https://api.twelvedata.com"
 GITHUB_REPO       = os.environ.get("GITHUB_REPO", "portfolio-agent")
 GITHUB_USERNAME   = os.environ.get("GITHUB_USERNAME", "")
 PORTFOLIO_FILE    = "portfolio.json"
@@ -511,114 +477,96 @@ def check_callbacks():
 
 # ── PREZZI ───────────────────────────────────────────────────
 def get_prices_batch(tickers):
-    """Scarica prezzi in UNA sola chiamata bulk — anti rate-limiting."""
+    """Scarica prezzi giornalieri via Twelve Data.
+    Una sola richiesta bulk per tutti i ticker — nessun blocco IP."""
     results = {}
-    if not tickers:
+    if not tickers or not TWELVE_DATA_KEY:
         return results
-    try:
-        data = yf.download(
-            tickers, period="3d", interval="1d",
-            group_by="ticker", auto_adjust=True,
-            progress=False, threads=False,
-            session=_YF_SESSION
-        )
-        if data.empty:
-            return results
-        for ticker in tickers:
-            try:
-                closes = data["Close"][ticker].dropna() if len(tickers) > 1 else data["Close"].dropna()
-                if len(closes) >= 2:
-                    p_curr = float(closes.iloc[-1])
-                    p_prev = float(closes.iloc[-2])
-                    if p_prev > 0:
-                        results[ticker] = {
-                            "price":      p_curr,
-                            "prev_close": p_prev,
-                            "change_pct": (p_curr - p_prev) / p_prev * 100
-                        }
-            except Exception:
-                pass
-    except Exception as e:
-        log.error(f"get_prices_batch error: {e}")
-        # Fallback in mini-batch da 20
-        for i in range(0, len(tickers), 20):
-            batch = tickers[i:i+20]
-            try:
-                data = yf.download(batch, period="3d", interval="1d",
-                                   group_by="ticker", auto_adjust=True,
-                                   progress=False, threads=False,
-                                   session=_YF_SESSION)
+    # Twelve Data accetta max 120 simboli per richiesta
+    for i in range(0, len(tickers), 100):
+        batch = tickers[i:i+100]
+        symbols = ",".join(batch)
+        try:
+            r = requests.get(
+                f"{TWELVE_DATA_URL}/eod",
+                params={
+                    "symbol":   symbols,
+                    "apikey":   TWELVE_DATA_KEY,
+                    "dp":       2,
+                    "order":    "desc",
+                    "outputsize": 2,
+                },
+                timeout=30
+            )
+            if not r.ok:
+                log.error(f"Twelve Data HTTP {r.status_code}")
+                continue
+            data = r.json()
+            # Risposta: {"AAPL": {"values": [{"close": ...}, ...]}, ...}
+            if isinstance(data, dict):
                 for ticker in batch:
-                    try:
-                        closes = data["Close"][ticker].dropna() if len(batch)>1 else data["Close"].dropna()
-                        if len(closes) >= 2:
-                            p_curr = float(closes.iloc[-1])
-                            p_prev = float(closes.iloc[-2])
-                            if p_prev > 0:
-                                results[ticker] = {
-                                    "price": p_curr, "prev_close": p_prev,
-                                    "change_pct": (p_curr - p_prev) / p_prev * 100
-                                }
-                    except Exception:
-                        pass
-            except Exception as e2:
-                log.error(f"Fallback error: {e2}")
-            time.sleep(3)
-    return results
-def get_intraday_batch(tickers):
-    """Scarica prezzi intraday in UNA sola chiamata bulk.
-    Usa period=1d interval=1h per bilanciare granularita e rate limiting.
-    Meno richieste = meno blocchi da Yahoo Finance."""
-    results = {}
-    if not tickers:
-        return results
-    try:
-        # Una sola chiamata per tutti i ticker
-        data = yf.download(
-            tickers, period="1d", interval="1h",
-            group_by="ticker", auto_adjust=True,
-            progress=False, threads=False,
-            session=_YF_SESSION
-        )
-        if data.empty:
-            # Fallback a dati giornalieri se intraday non disponibile
-            return get_prices_batch(tickers)
-        for ticker in tickers:
-            try:
-                closes = data["Close"][ticker].dropna() if len(tickers)>1 else data["Close"].dropna()
-                if len(closes) >= 2:
-                    op = float(closes.iloc[0])
-                    cp = float(closes.iloc[-1])
-                    if op > 0:
-                        results[ticker] = {
-                            "price":      cp,
-                            "open":       op,
-                            "change_pct": (cp - op) / op * 100
-                        }
-            except Exception:
-                pass
-    except Exception as e:
-        log.error(f"get_intraday_batch error: {e}")
-        # Fallback ai dati giornalieri
-        return get_prices_batch(tickers)
+                    ticker_data = data.get(ticker, {})
+                    if ticker_data.get("status") == "error":
+                        continue
+                    values = ticker_data.get("values", [])
+                    if len(values) >= 2:
+                        p_curr = float(values[0]["close"])
+                        p_prev = float(values[1]["close"])
+                        if p_prev > 0:
+                            results[ticker] = {
+                                "price":      p_curr,
+                                "prev_close": p_prev,
+                                "change_pct": (p_curr - p_prev) / p_prev * 100
+                            }
+        except Exception as e:
+            log.error(f"get_prices_batch error: {e}")
+        time.sleep(1)
     return results
 
-# ── NOTIZIE ──────────────────────────────────────────────────
-def get_news(query, hours=4, max_articles=3):
-    if not NEWS_API_KEY:
-        return []
-    from_time = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
-    try:
-        r = requests.get("https://newsapi.org/v2/everything", params={
-            "q": query, "from": from_time, "sortBy": "publishedAt",
-            "language": "en", "pageSize": max_articles, "apiKey": NEWS_API_KEY
-        }, timeout=10)
-        if r.ok:
-            return [{"title": a["title"], "source": a["source"]["name"],
-                     "url": a["url"]} for a in r.json().get("articles", [])]
-    except Exception as e:
-        log.error(f"NewsAPI error: {e}")
-    return []
+def get_intraday_batch(tickers):
+    """Scarica prezzi intraday via Twelve Data.
+    Endpoint /quote restituisce prezzo corrente + variazione giornaliera."""
+    results = {}
+    if not tickers or not TWELVE_DATA_KEY:
+        return results
+    for i in range(0, len(tickers), 100):
+        batch   = tickers[i:i+100]
+        symbols = ",".join(batch)
+        try:
+            r = requests.get(
+                f"{TWELVE_DATA_URL}/quote",
+                params={
+                    "symbol": symbols,
+                    "apikey": TWELVE_DATA_KEY,
+                    "dp":     2,
+                },
+                timeout=30
+            )
+            if not r.ok:
+                log.error(f"Twelve Data quote HTTP {r.status_code}")
+                continue
+            data = r.json()
+            if isinstance(data, dict):
+                for ticker in batch:
+                    q = data.get(ticker, {})
+                    if q.get("status") == "error":
+                        continue
+                    try:
+                        price      = float(q.get("close", 0))
+                        open_price = float(q.get("open", 0))
+                        pct_change = float(q.get("percent_change", 0))
+                        if price > 0:
+                            results[ticker] = {
+                                "price":      price,
+                                "open":       open_price,
+                                "change_pct": pct_change
+                            }
+                    except (TypeError, ValueError):
+                        pass
+        except Exception as e:
+            log.error(f"get_intraday_batch error: {e}")
+        time.sleep(1)
+    return results
 
 def get_portfolio_news(hours=8, tier_filter=None):
     """Cerca notizie per TUTTI i titoli di ogni PIE.
@@ -687,8 +635,6 @@ def check_price_alerts():
     if not (MARKET_OPEN <= now.hour < MARKET_CLOSE):
         return
     log.info("Check prezzi tutti i ticker...")
-    # Pausa casuale 2-5 secondi prima della richiesta — anti-fingerprinting
-    time.sleep(2 + (now.second % 3))
     prices = get_intraday_batch(ALL_TICKERS)
 
     for ticker, data in prices.items():
@@ -1251,7 +1197,7 @@ def send_weekly_report():
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
     # Ogni minuto: prezzi + callback
-    schedule.every(1).minutes.do(check_price_alerts)
+    schedule.every(5).minutes.do(check_price_alerts)  # 5 min = 288 req/giorno (limite free: 800)
     schedule.every(1).minutes.do(check_callbacks)
     # Notizie: schema ottimale 93 richieste/giorno (limite 100)
     # 08:00 CET — scansione completa 35 query (apertura mercati EU)
