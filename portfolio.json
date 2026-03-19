@@ -1,0 +1,113 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-03-19",
+  "description": "Factor Portfolio 18 PIE — Trading 212",
+  "pies": {
+    "PIE01_Aristocrats_USA": {
+      "tier": 1, "peso_target": 8.0,
+      "tickers": ["PG","JNJ","KO","PEP","ABT","MDT","WMT","EMR"]
+    },
+    "PIE02_Aristocrats_EU": {
+      "tier": 1, "peso_target": 7.0,
+      "tickers": ["AI.PA","NESN.SW","OR.PA","SIKA.SW","WKL.AS","DSY.PA","LIN"]
+    },
+    "PIE03_Aristocrats_Asia": {
+      "tier": 1, "peso_target": 7.0,
+      "tickers": ["D05.SI","7203.T","6758.T","CBA.AX"]
+    },
+    "PIE04_Champions_Energia": {
+      "tier": 1, "peso_target": 6.0,
+      "tickers": ["XOM","CVX","WMB","ENB","TTE","EOG","CEG"]
+    },
+    "PIE05_Champions_Finanza": {
+      "tier": 1, "peso_target": 6.0,
+      "tickers": ["HSBA.L","CS.PA","ALV.DE","AIG","UCG.MI","BNP.PA","MQG.AX"]
+    },
+    "PIE06_REIT_Growth": {
+      "tier": 1, "peso_target": 6.0,
+      "tickers": ["O","PLD","AMT","EQIX","WPC","AWK"]
+    },
+    "PIE07_Quality_Tech": {
+      "tier": 2, "peso_target": 6.0,
+      "tickers": ["ASML","MSFT","TXN","AAPL","SAP","AVGO"]
+    },
+    "PIE08_Quality_Lusso": {
+      "tier": 2, "peso_target": 6.0,
+      "tickers": ["MC.PA","RMS.PA","CFR.SW","RACE","MONC.MI","EL"]
+    },
+    "PIE09_Quality_Healthcare": {
+      "tier": 2, "peso_target": 5.0,
+      "tickers": ["JNJ","LLY","NOVOB.CO","AZN","TMO","ROG.SW","UNH"]
+    },
+    "PIE10_Quality_Difesa": {
+      "tier": 2, "peso_target": 5.0,
+      "tickers": ["LMT","NOC","RHM.DE","BAESY","AIR.PA","BWXT","GD"]
+    },
+    "PIE11_Quality_Chip": {
+      "tier": 2, "peso_target": 4.0,
+      "tickers": ["TSM","005930.KS","000660.KS","QCOM","8035.T"]
+    },
+    "PIE12_Quality_Infrastrutture": {
+      "tier": 2, "peso_target": 4.0,
+      "tickers": ["BIP","DG.PA","FER.MC","GET.PA","ATNI.MI"]
+    },
+    "PIE13_Utility_Nucleare": {
+      "tier": 3, "peso_target": 6.0,
+      "tickers": ["CEG","ENEL.MI","IBE.MC","ETR","SRG.MI","TRN.MI","D"]
+    },
+    "PIE14_Consumer_Staples": {
+      "tier": 3, "peso_target": 5.0,
+      "tickers": ["PG","KO","PEP","ULVR.L","COST"]
+    },
+    "PIE15_Gas_Industriali": {
+      "tier": 3, "peso_target": 5.0,
+      "tickers": ["AI.PA","LIN","SIKA.SW","SHW","APD"]
+    },
+    "PIE16_Midstream_Pipeline": {
+      "tier": 3, "peso_target": 4.0,
+      "tickers": ["WMB","ENB","KMI","TRP","PPL"]
+    },
+    "PIE17_AI_Tech": {
+      "tier": 4, "peso_target": 6.0,
+      "tickers": ["NVDA","GOOGL","META","AMZN","AMD","KWEB"]
+    },
+    "PIE18_EM_Growth": {
+      "tier": 4, "peso_target": 4.0,
+      "tickers": ["INFY","HDB","ITUB","VALE","IBN","KWEB","RELIANCE.NS"]
+    }
+  },
+  "ticker_names": {
+    "PG":"Procter Gamble","JNJ":"Johnson Johnson","KO":"Coca-Cola",
+    "PEP":"PepsiCo","ABT":"Abbott","MDT":"Medtronic","WMT":"Walmart",
+    "EMR":"Emerson Electric","LIN":"Linde","AI.PA":"Air Liquide",
+    "NESN.SW":"Nestle","OR.PA":"L Oreal","SIKA.SW":"Sika",
+    "WKL.AS":"Wolters Kluwer","DSY.PA":"Dassault Systemes",
+    "D05.SI":"DBS Group","7203.T":"Toyota","6758.T":"Sony Group",
+    "CBA.AX":"Commonwealth Bank","XOM":"ExxonMobil","CVX":"Chevron",
+    "WMB":"Williams Companies","ENB":"Enbridge","TTE":"TotalEnergies",
+    "EOG":"EOG Resources","CEG":"Constellation Energy","HSBA.L":"HSBC",
+    "CS.PA":"AXA","ALV.DE":"Allianz","AIG":"AIG","UCG.MI":"UniCredit",
+    "BNP.PA":"BNP Paribas","MQG.AX":"Macquarie","O":"Realty Income",
+    "PLD":"Prologis","AMT":"American Tower","EQIX":"Equinix",
+    "WPC":"WP Carey","AWK":"American Water","ASML":"ASML",
+    "MSFT":"Microsoft","TXN":"Texas Instruments","AAPL":"Apple",
+    "SAP":"SAP","AVGO":"Broadcom","MC.PA":"LVMH","RMS.PA":"Hermes",
+    "CFR.SW":"Richemont","RACE":"Ferrari","MONC.MI":"Moncler",
+    "EL":"Estee Lauder","LLY":"Eli Lilly","NOVOB.CO":"Novo Nordisk",
+    "AZN":"AstraZeneca","TMO":"Thermo Fisher","ROG.SW":"Roche",
+    "UNH":"UnitedHealth","LMT":"Lockheed Martin","NOC":"Northrop Grumman",
+    "RHM.DE":"Rheinmetall","BAESY":"BAE Systems","AIR.PA":"Airbus",
+    "BWXT":"BWX Technologies","GD":"General Dynamics","TSM":"TSMC",
+    "005930.KS":"Samsung","000660.KS":"SK Hynix","QCOM":"Qualcomm",
+    "8035.T":"Tokyo Electron","BIP":"Brookfield Infrastructure",
+    "DG.PA":"Vinci","FER.MC":"Ferrovial","GET.PA":"Getlink",
+    "ATNI.MI":"Atlantia","ENEL.MI":"Enel","IBE.MC":"Iberdrola",
+    "ETR":"Entergy","SRG.MI":"Snam","TRN.MI":"Terna","D":"Dominion",
+    "ULVR.L":"Unilever","COST":"Costco","SHW":"Sherwin-Williams",
+    "APD":"Air Products","KMI":"Kinder Morgan","TRP":"TC Energy",
+    "PPL":"PPL Corporation","NVDA":"NVIDIA","GOOGL":"Alphabet",
+    "META":"Meta","AMZN":"Amazon","AMD":"AMD","KWEB":"China Internet ETF",
+    "INFY":"Infosys","HDB":"HDFC Bank","ITUB":"Itau Unibanco",
+    "VALE":"Vale","IBN":"ICICI Bank","RELIANCE.NS":"Reliance Industries"
+  }
+}
