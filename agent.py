@@ -1,16 +1,10 @@
 """
 Portfolio Agent v3 — Factor Portfolio 18 PIE
 Analisi professionale con Claude + Web Search
-Nessuna API prezzi — copertura totale 98 titoli via ricerca web
+Struttura: Morning Brief 08:00 | Evening Brief 20:00 (solo eventi critici) | Weekly Review domenica
 """
 
-import os
-import time
-import json
-import logging
-import sqlite3
-import schedule
-import requests
+import os, time, json, logging, sqlite3, schedule, requests
 from datetime import datetime, timezone, timedelta
 
 # ── CONFIG ───────────────────────────────────────────────────
@@ -23,8 +17,7 @@ GITHUB_USERNAME   = os.environ.get("GITHUB_USERNAME", "")
 PORTFOLIO_FILE    = "portfolio.json"
 
 logging.basicConfig(level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S")
+    format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 log = logging.getLogger(__name__)
 
 # ── PORTAFOGLIO ──────────────────────────────────────────────
@@ -53,9 +46,9 @@ def reload_portfolio(portfolio_data):
     PORTFOLIO = {}
     for pie_name, pie_data in portfolio_data["pies"].items():
         PORTFOLIO[pie_name] = {
-            "tier":         pie_data["tier"],
-            "peso_target":  pie_data["peso_target"],
-            "tickers":      pie_data["tickers"]
+            "tier": pie_data["tier"],
+            "peso_target": pie_data["peso_target"],
+            "tickers": pie_data["tickers"]
         }
     TICKER_NAMES.update(portfolio_data.get("ticker_names", {}))
     ALL_TICKERS = list(set(t for pie in PORTFOLIO.values() for t in pie["tickers"]))
@@ -69,7 +62,7 @@ def init_db():
         hash TEXT PRIMARY KEY, alert_type TEXT, created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS recommendations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rec_type TEXT, details TEXT,
+        rec_type TEXT, details TEXT, t212_instructions TEXT,
         created_at TEXT, status TEXT DEFAULT 'pending')""")
     conn.commit()
     conn.close()
@@ -91,15 +84,23 @@ def mark_sent(hash_key, alert_type):
     conn.commit()
     conn.close()
 
-def save_recommendation(rec_type, details):
+def save_recommendation(rec_type, details, t212_instructions=""):
     conn = sqlite3.connect("agent_state.db")
     c = conn.cursor()
-    c.execute("INSERT INTO recommendations (rec_type,details,created_at) VALUES (?,?,?)",
-              (rec_type, details, datetime.now(timezone.utc).isoformat()))
+    c.execute("INSERT INTO recommendations (rec_type,details,t212_instructions,created_at) VALUES (?,?,?,?)",
+              (rec_type, details, t212_instructions, datetime.now(timezone.utc).isoformat()))
     rec_id = c.lastrowid
     conn.commit()
     conn.close()
     return rec_id
+
+def get_recommendation(rec_id):
+    conn = sqlite3.connect("agent_state.db")
+    c = conn.cursor()
+    c.execute("SELECT details, t212_instructions FROM recommendations WHERE id=?", (rec_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
 
 def update_recommendation(rec_id, status):
     conn = sqlite3.connect("agent_state.db")
@@ -124,28 +125,36 @@ def send_telegram(message, parse_mode="HTML"):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
         r = requests.post(url, json={
-            "chat_id": TELEGRAM_CHAT_ID, "text": message,
-            "parse_mode": parse_mode, "disable_web_page_preview": True
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": True
         }, timeout=10)
         return r.ok
     except Exception as e:
         log.error(f"Telegram error: {e}")
     return False
 
-def send_with_buttons(message, buttons):
+def send_with_buttons(message, rec_id, has_t212=True):
+    """Invia messaggio con bottoni T212 e Solo nota.
+    has_t212=True solo quando c'e una raccomandazione operativa concreta con pesi."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return False
-    keyboard = {"inline_keyboard": [[
-        {"text": b["text"], "callback_data": b["data"]} for b in row
-    ] for row in buttons]}
+    buttons = []
+    if has_t212:
+        buttons.append({"text": "✅ Vedi istruzioni T212", "callback_data": f"t212_{rec_id}"})
+    buttons.append({"text": "📝 Solo nota", "callback_data": f"note_{rec_id}"})
+    keyboard = {"inline_keyboard": [buttons]}
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": message,
-                  "parse_mode": "HTML", "reply_markup": keyboard,
-                  "disable_web_page_preview": True},
-            timeout=10
-        )
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard,
+                "disable_web_page_preview": True
+            }, timeout=10)
         return r.ok
     except Exception as e:
         log.error(f"Telegram buttons error: {e}")
@@ -158,8 +167,7 @@ def check_callbacks():
         r = requests.get(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates",
             params={"timeout": 1, "allowed_updates": ["callback_query"]},
-            timeout=5
-        )
+            timeout=5)
         if not r.ok:
             return
         updates = r.json().get("result", [])
@@ -168,49 +176,71 @@ def check_callbacks():
             last_id = update["update_id"]
             if "callback_query" in update:
                 cq = update["callback_query"]
-                handle_callback(cq["data"])
-                requests.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-                    json={"callback_query_id": cq["id"]}, timeout=5
-                )
+                handle_callback(cq["data"], cq["id"])
         if last_id:
             requests.get(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates",
-                params={"offset": last_id + 1, "limit": 1}, timeout=5
-            )
+                params={"offset": last_id + 1, "limit": 1}, timeout=5)
     except Exception as e:
         log.error(f"Callback error: {e}")
 
-def handle_callback(data):
+def handle_callback(data, callback_query_id):
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+            json={"callback_query_id": callback_query_id}, timeout=5)
+    except:
+        pass
+
     parts = data.split("_")
     action = parts[0]
     rec_id = int(parts[1]) if len(parts) > 1 else None
     if not rec_id:
         return
-    if action == "approve":
-        update_recommendation(rec_id, "approved")
-        conn = sqlite3.connect("agent_state.db")
-        c = conn.cursor()
-        c.execute("SELECT details FROM recommendations WHERE id=?", (rec_id,))
-        row = c.fetchone()
-        conn.close()
+
+    if action == "t212":
+        # Invia istruzioni T212 specifiche
+        row = get_recommendation(rec_id)
         if row:
-            send_telegram(
-                "✅ <b>APPROVATO</b>\\n\\n"
-                + row[0]
-                + "\\n\\n<i>Esegui su Trading 212 quando sei pronto.</i>"
-            )
-    elif action == "reject":
-        update_recommendation(rec_id, "rejected")
-        send_telegram(f"❌ Raccomandazione #{rec_id} rifiutata. Nessuna azione.")
+            details, t212_instructions = row
+            if t212_instructions:
+                send_telegram(
+                    f"📱 <b>ISTRUZIONI TRADING 212</b>\n\n"
+                    f"{t212_instructions}\n\n"
+                    f"<i>Esegui quando sei pronto. Puoi farlo in qualsiasi momento.</i>"
+                )
+            else:
+                # Genera istruzioni T212 al momento
+                instructions = generate_t212_instructions(details)
+                if instructions:
+                    update_recommendation(rec_id, "approved")
+                    send_telegram(
+                        f"📱 <b>ISTRUZIONI TRADING 212</b>\n\n"
+                        f"{instructions}\n\n"
+                        f"<i>Esegui quando sei pronto.</i>"
+                    )
+    elif action == "note":
+        update_recommendation(rec_id, "noted")
+        send_telegram("📝 <i>Annotato. Nessuna azione richiesta.</i>")
+
+def generate_t212_instructions(analysis):
+    """Genera istruzioni operative specifiche per T212 basate sull'analisi."""
+    prompt = (
+        f"Basandoti su questa analisi del portafoglio:\n\n{analysis}\n\n"
+        f"Genera istruzioni operative SPECIFICHE e PRATICHE per eseguire le modifiche su Trading 212.\n"
+        f"Formato richiesto:\n"
+        f"Per ogni PIE da modificare:\n"
+        f"1. Nome del PIE su T212\n"
+        f"2. Azione: apri il PIE → clicca Modifica → cambia il peso di [TITOLO] da X% a Y%\n"
+        f"3. Lista completa tutti i titoli del PIE con i nuovi pesi\n"
+        f"4. Clicca Ribilancia per applicare\n\n"
+        f"Sii specifico sui numeri. Se non ci sono modifiche operative concrete, scrivi: "
+        f"'Nessuna azione richiesta — mantieni i pesi attuali.'"
+    )
+    return claude_with_search(prompt, max_tokens=800)
 
 # ── CLAUDE CON WEB SEARCH ────────────────────────────────────
-def claude_with_search(prompt, max_tokens=1500):
-    """Chiama Claude con web search abilitato per analisi aggiornate."""
-    if not ANTHROPIC_API_KEY:
-        return None
-    
-    system = """Sei un analista finanziario senior di livello istituzionale.
+SYSTEM_PROMPT = """Sei un analista finanziario senior di livello istituzionale.
 Gestisci un Factor Portfolio con 18 PIE e 100 titoli globali su 4 tier:
 - Tier 1 (40%): Dividend Aristocrats
 - Tier 2 (30%): Quality Compounders
@@ -219,145 +249,71 @@ Gestisci un Factor Portfolio con 18 PIE e 100 titoli globali su 4 tier:
 
 COMPOSIZIONE COMPLETA PORTAFOGLIO - 18 PIE CON PESI REALI:
 PIE01 Aristocrats USA (Tier 1, 8.0% portafoglio):
-  Procter & Gamble: 16%
-  Johnson & Johnson: 15%
-  Coca-Cola: 14%
-  PepsiCo: 12%
-  Abbott: 11%
-  Medtronic: 11%
-  Walmart: 10%
-  Emerson Electric: 11%
+  Procter & Gamble: 16%, Johnson & Johnson: 15%, Coca-Cola: 14%, PepsiCo: 12%
+  Abbott: 11%, Medtronic: 11%, Walmart: 10%, Emerson Electric: 11%
 PIE02 Aristocrats EU (Tier 1, 7.0% portafoglio):
-  Air Liquide: 18%
-  Nestle: 15%
-  L'Oreal: 14%
-  Sika: 13%
-  Wolters Kluwer: 12%
-  Dassault Systemes: 12%
-  Linde: 16%
+  Air Liquide: 18%, Nestle: 15%, L'Oreal: 14%, Sika: 13%
+  Wolters Kluwer: 12%, Dassault Systemes: 12%, Linde: 16%
 PIE03 Aristocrats Asia (Tier 1, 7.0% portafoglio):
-  DBS Group: 38%
-  Toyota: 30%
-  Sony Group: 20%
-  Commonwealth Bank: 12%
+  DBS Group: 38%, Toyota: 30%, Sony Group: 20%, Commonwealth Bank: 12%
 PIE04 Champions Energia (Tier 1, 6.0% portafoglio):
-  ExxonMobil: 20%
-  Chevron: 18%
-  Williams Companies: 16%
-  Enbridge: 14%
-  TotalEnergies: 12%
-  EOG Resources: 10%
-  Constellation Energy: 10%
+  ExxonMobil: 20%, Chevron: 18%, Williams Companies: 16%, Enbridge: 14%
+  TotalEnergies: 12%, EOG Resources: 10%, Constellation Energy: 10%
 PIE05 Champions Finanza (Tier 1, 6.0% portafoglio):
-  HSBC: 18%
-  AXA: 16%
-  Allianz: 16%
-  AIG: 14%
-  UniCredit: 12%
-  BNP Paribas: 12%
-  Macquarie: 12%
+  HSBC: 18%, AXA: 16%, Allianz: 16%, AIG: 14%
+  UniCredit: 12%, BNP Paribas: 12%, Macquarie: 12%
 PIE06 REIT Growth (Tier 1, 6.0% portafoglio):
-  Realty Income: 22%
-  Prologis: 18%
-  American Tower: 18%
-  Equinix: 14%
-  WP Carey: 14%
-  American Water: 14%
+  Realty Income: 22%, Prologis: 18%, American Tower: 18%
+  Equinix: 14%, WP Carey: 14%, American Water: 14%
 PIE07 Quality Tech (Tier 2, 6.0% portafoglio):
-  ASML: 22%
-  Microsoft: 20%
-  Texas Instruments: 18%
-  Apple: 16%
-  SAP: 14%
-  Broadcom: 10%
+  ASML: 22%, Microsoft: 20%, Texas Instruments: 18%
+  Apple: 16%, SAP: 14%, Broadcom: 10%
 PIE08 Quality Lusso (Tier 2, 6.0% portafoglio):
-  LVMH: 24%
-  Hermes: 20%
-  Richemont: 16%
-  Ferrari: 16%
-  Moncler: 12%
-  Estee Lauder: 12%
+  LVMH: 24%, Hermes: 20%, Richemont: 16%
+  Ferrari: 16%, Moncler: 12%, Estee Lauder: 12%
 PIE09 Quality Healthcare (Tier 2, 5.0% portafoglio):
-  Johnson & Johnson: 18%
-  Eli Lilly: 16%
-  Novo Nordisk: 14%
-  AstraZeneca: 14%
-  Thermo Fisher: 12%
-  Roche: 12%
-  UnitedHealth: 14%
+  Johnson & Johnson: 18%, Eli Lilly: 16%, Novo Nordisk: 14%
+  AstraZeneca: 14%, Thermo Fisher: 12%, Roche: 12%, UnitedHealth: 14%
 PIE10 Quality Difesa (Tier 2, 5.0% portafoglio):
-  Lockheed Martin: 18%
-  Northrop Grumman: 16%
-  Rheinmetall: 16%
-  BAE Systems: 14%
-  Airbus: 14%
-  BWX Technologies: 12%
-  General Dynamics: 10%
+  Lockheed Martin: 18%, Northrop Grumman: 16%, Rheinmetall: 16%
+  BAE Systems: 14%, Airbus: 14%, BWX Technologies: 12%, General Dynamics: 10%
 PIE11 Quality Chip (Tier 2, 4.0% portafoglio):
-  TSMC: 28%
-  Samsung: 22%
-  SK Hynix: 18%
-  Qualcomm: 16%
-  Tokyo Electron: 16%
+  TSMC: 28%, Samsung: 22%, SK Hynix: 18%, Qualcomm: 16%, Tokyo Electron: 16%
 PIE12 Quality Infrastrutture (Tier 2, 4.0% portafoglio):
-  Brookfield Infrastructure: 26%
-  Vinci: 22%
-  Ferrovial: 20%
-  Getlink: 17%
-  National Grid: 15%
+  Brookfield Infrastructure: 26%, Vinci: 22%, Ferrovial: 20%
+  Getlink: 17%, National Grid: 15%
 PIE13 Utility Nucleare (Tier 3, 6.0% portafoglio):
-  Constellation Energy: 18%
-  Enel: 16%
-  Iberdrola: 15%
-  Entergy: 13%
-  Snam: 12%
-  Terna: 12%
-  Dominion Energy: 14%
+  Constellation Energy: 18%, Enel: 16%, Iberdrola: 15%
+  Entergy: 13%, Snam: 12%, Terna: 12%, Dominion Energy: 14%
 PIE14 Consumer Staples (Tier 3, 5.0% portafoglio):
-  Procter & Gamble: 20%
-  Coca-Cola: 18%
-  PepsiCo: 16%
-  Unilever: 16%
-  Costco: 16%
-  Colgate-Palmolive: 14%
+  Procter & Gamble: 20%, Coca-Cola: 18%, PepsiCo: 16%
+  Unilever: 16%, Costco: 16%, Colgate-Palmolive: 14%
 PIE15 Gas Industriali (Tier 3, 5.0% portafoglio):
-  Air Liquide: 28%
-  Linde: 24%
-  Sika: 20%
-  Sherwin-Williams: 14%
-  Air Products: 14%
+  Air Liquide: 28%, Linde: 24%, Sika: 20%
+  Sherwin-Williams: 14%, Air Products: 14%
 PIE16 Midstream Pipeline (Tier 3, 4.0% portafoglio):
-  Williams Companies: 28%
-  Enbridge: 24%
-  Kinder Morgan: 20%
-  TC Energy: 16%
-  PPL Corporation: 12%
+  Williams Companies: 28%, Enbridge: 24%, Kinder Morgan: 20%
+  TC Energy: 16%, PPL Corporation: 12%
 PIE17 AI Tech (Tier 4, 6.0% portafoglio):
-  NVIDIA: 25%
-  Alphabet: 22%
-  Meta: 20%
-  Amazon: 18%
-  AMD: 10%
-  China Internet ETF: 5%
+  NVIDIA: 25%, Alphabet: 22%, Meta: 20%
+  Amazon: 18%, AMD: 10%, China Internet ETF: 5%
 PIE18 EM Growth (Tier 4, 4.0% portafoglio):
-  Infosys: 20%
-  HDFC Bank: 18%
-  Itau Unibanco: 16%
-  Vale: 14%
-  Reliance Industries: 12%
-  China Internet ETF: 12%
-  ICICI Bank: 8%
+  Infosys: 20%, HDFC Bank: 18%, Itau Unibanco: 16%
+  Vale: 14%, Reliance Industries: 12%, China Internet ETF: 12%, ICICI Bank: 8%
 
 REGOLE OBBLIGATORIE PER LE RACCOMANDAZIONI:
 Quando suggerisci modifiche a un PIE elenca SEMPRE tutti i titoli con % precisa.
 Non solo i titoli modificati - TUTTI, anche quelli invariati.
 I pesi di ogni PIE devono sempre sommare esattamente a 100%.
 Indica sempre il motivo della modifica in una frase.
-Se suggerisci sostituzione indica: titolo aggiunto, titolo rimosso, nuovi pesi completi.
+Se suggerisci sostituzione: titolo aggiunto, titolo rimosso, nuovi pesi completi.
 Mantieni la coerenza con la tesi dividend growth. No trading tattico.
 
 Rispondi in italiano, tono professionale ma diretto. Usa emoji per chiarezza visiva."""
 
+def claude_with_search(prompt, max_tokens=1500):
+    if not ANTHROPIC_API_KEY:
+        return None
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -369,15 +325,14 @@ Rispondi in italiano, tono professionale ma diretto. Usa emoji per chiarezza vis
             json={
                 "model": "claude-sonnet-4-20250514",
                 "max_tokens": max_tokens,
-                "system": system,
+                "system": SYSTEM_PROMPT,
                 "tools": [{"type": "web_search_20250305", "name": "web_search"}],
                 "messages": [{"role": "user", "content": prompt}]
             },
-            timeout=60
+            timeout=90
         )
         if r.ok:
             data = r.json()
-            # Estrai tutto il testo dalla risposta (inclusi risultati dopo web search)
             text_parts = [
                 block["text"] for block in data.get("content", [])
                 if block.get("type") == "text"
@@ -389,364 +344,272 @@ Rispondi in italiano, tono professionale ma diretto. Usa emoji per chiarezza vis
         log.error(f"Claude error: {e}")
     return None
 
-# ── BRIEFING MATTUTINO ───────────────────────────────────────
-def send_morning_briefing():
-    log.info("Briefing mattutino in corso...")
-    now = datetime.now(timezone.utc)
+def has_operational_recommendation(text):
+    """Controlla se il testo contiene una raccomandazione operativa concreta con pesi."""
+    keywords = ["riduci ", "aumenta ", "sostituisci ", "sposta ", "modifica il peso",
+                "dal ", "% al ", "nuovo peso", "ribilancia"]
+    text_lower = text.lower()
+    return sum(1 for kw in keywords if kw in text_lower) >= 2
 
-    # Lista titoli per settore per la ricerca
-    titoli_principali = [
-        "NVIDIA", "Microsoft", "Apple", "ASML", "LVMH", "Hermes",
-        "ExxonMobil", "Chevron", "Lockheed Martin", "Rheinmetall",
-        "Novo Nordisk", "Eli Lilly", "Realty Income", "Air Liquide",
-        "Toyota", "Samsung", "DBS Group", "Nestle"
-    ]
-
-    prompt = (
-        f"Oggi è {now.strftime('%d/%m/%Y')}. "
-        f"Fai una ricerca web sulle ultime notizie finanziarie di queste aziende del portafoglio: "
-        f"{', '.join(titoli_principali)}. "
-        f"Poi analizza le notizie trovate e produci un briefing professionale strutturato così:\\n"
-        f"1. EVENTI CRITICI (se presenti): notizie che cambiano la tesi di investimento\\n"
-        f"2. DA MONITORARE: sviluppi da tenere d'occhio\\n"
-        f"3. POSITIVO: conferme della tesi\\n"
-        f"4. CONSIGLIO OPERATIVO: azione concreta se necessaria (ribilancio PIE, cambio peso)\\n"
-        f"Sii concreto e professionale. Se non ci sono notizie rilevanti dillo chiaramente."
-    )
-
-    analysis = claude_with_search(prompt, max_tokens=1500)
-    if not analysis:
-        return
-
-    msg = (
-        f"📋 <b>BRIEFING MATTUTINO — {now.strftime('%d/%m/%Y')}</b>\\n\\n"
-        f"{analysis}\\n\\n"
-        f"<i>Factor Portfolio · 18 PIE · Analisi Claude + Web Search</i>"
-    )
-
-    # Dividi se troppo lungo per Telegram (max 4096 char)
-    if len(msg) > 4000:
-        send_telegram(msg[:4000] + "...\\n<i>(continua)</i>")
-        send_telegram("...<i>(segue)</i>\\n" + msg[4000:])
-    else:
-        send_telegram(msg)
-
-# ── BRIEFING NYSE ─────────────────────────────────────────────
-def send_nyse_briefing():
-    log.info("Briefing apertura NYSE...")
-    now = datetime.now(timezone.utc)
-
-    prompt = (
-        f"Oggi è {now.strftime('%d/%m/%Y')}, sono le 16:00 CET — apertura di Wall Street. "
-        f"Cerca le notizie di oggi su questi titoli USA del portafoglio: "
-        f"NVIDIA, Microsoft, Apple, Meta, Amazon, AMD, "
-        f"ExxonMobil, Chevron, Lockheed Martin, Northrop Grumman, General Dynamics, "
-        f"Johnson & Johnson, Eli Lilly, UnitedHealth, Thermo Fisher, "
-        f"Realty Income, Prologis, American Tower, Equinix, "
-        f"Procter & Gamble, Coca-Cola, Costco, Walmart. "
-        f"Analizza il contesto macro di oggi (Fed, dati economici, geopolitica) "
-        f"e il suo impatto specifico sui PIE del portafoglio. "
-        f"Produci un briefing professionale con: contesto macro, titoli in evidenza, "
-        f"impatto sui PIE, consiglio operativo se necessario."
-    )
-
-    analysis = claude_with_search(prompt, max_tokens=1200)
-    if not analysis:
-        return
-
-    msg = (
-        f"🗽 <b>BRIEFING NYSE — {now.strftime('%d/%m/%Y')}</b>\\n\\n"
-        f"{analysis}\\n\\n"
-        f"<i>Factor Portfolio · Analisi Claude + Web Search</i>"
-    )
-    if len(msg) > 4000:
-        send_telegram(msg[:4000] + "...")
-        send_telegram("..." + msg[4000:])
-    else:
-        send_telegram(msg)
-
-# ── REPORT SERALE ─────────────────────────────────────────────
-def send_evening_report():
-    log.info("Report serale...")
-    now = datetime.now(timezone.utc)
-
-    # Il venerdi analisi piu approfondita
-    is_friday = now.weekday() == 4
-
-    prompt = (
-        f"Oggi è {now.strftime('%d/%m/%Y')} — fine giornata. "
-        f"Cerca le notizie piu rilevanti di oggi per il Factor Portfolio dividend growth. "
-        f"Titoli da verificare: tutti i 18 PIE con focus su eventuali annunci dividendi, "
-        f"earnings, guidance, M&A, cambi CEO, downgrade/upgrade rating. "
-        f"Produci il report serale professionale con:\\n"
-        f"1. SINTESI GIORNATA: 2-3 righe sull'andamento generale\\n"
-        f"2. TITOLI IN EVIDENZA: max 5 notizie rilevanti con impatto sulla tesi\\n"
-        f"3. CONSIGLIO OPERATIVO: se necessario, azione concreta con dettagli per T212\\n"
-        f"{'4. ANALISI SETTIMANALE: bilancio della settimana e outlook prossima' if is_friday else ''}"
-        f"\\nSii diretto e professionale. Rating da 1-5 stelle per la giornata."
-    )
-
-    analysis = claude_with_search(prompt, max_tokens=1500)
-    if not analysis:
-        return
-
-    icon = "📊" if is_friday else "🟢"
-    title = "REPORT SERALE + ANALISI SETTIMANALE" if is_friday else "REPORT SERALE"
-
-    msg = (
-        f"{icon} <b>{title} — {now.strftime('%d/%m/%Y')}</b>\\n\\n"
-        f"{analysis}\\n\\n"
-        f"<i>Factor Portfolio · 18 PIE · Analisi Claude + Web Search</i>"
-    )
-
-    # Se contiene raccomandazione operativa, aggiungi bottoni
-    if any(kw in analysis.lower() for kw in ["consiglio operativo", "ribilancia", "sostituisci", "riduci"]):
-        rec_id = save_recommendation("evening_report", analysis)
-        buttons = [[
-            {"text": "✅ Vedi istruzioni T212", "data": f"approve_{rec_id}"},
-            {"text": "❌ Solo nota", "data": f"reject_{rec_id}"}
-        ]]
-        if len(msg) > 4000:
-            send_telegram(msg[:4000] + "...")
-            send_with_buttons("..." + msg[4000:], buttons)
-        else:
-            send_with_buttons(msg, buttons)
-    else:
-        if len(msg) > 4000:
-            send_telegram(msg[:4000] + "...")
-            send_telegram("..." + msg[4000:])
-        else:
-            send_telegram(msg)
-
-# ── OUTLOOK SETTIMANALE ───────────────────────────────────────
-def send_weekly_outlook():
-    log.info("Outlook settimanale...")
-    now = datetime.now(timezone.utc)
-
-    prompt = (
-        f"Oggi è lunedì {now.strftime('%d/%m/%Y')} — inizio settimana. "
-        f"Cerca: earnings della settimana per i titoli del portafoglio, "
-        f"dati macro attesi (Fed, CPI, PIL, disoccupazione), "
-        f"rischi geopolitici rilevanti per il portafoglio (energia, difesa, tech). "
-        f"Produci l'outlook settimanale professionale con:\\n"
-        f"1. EARNINGS DA SEGUIRE questa settimana (solo titoli del portafoglio)\\n"
-        f"2. DATI MACRO ATTESI e impatto sui PIE\\n"
-        f"3. RISCHI E OPPORTUNITA della settimana\\n"
-        f"4. CONSIGLIO STRATEGICO: cosa fare / non fare questa settimana\\n"
-        f"5. RIBILANCIAMENTO: il portafoglio necessita aggiustamenti? Proponi se si.\\n"
-        f"Tono da gestore istituzionale senior."
-    )
-
-    analysis = claude_with_search(prompt, max_tokens=1500)
-    if not analysis:
-        return
-
-    msg = (
-        f"📊 <b>OUTLOOK SETTIMANALE — {now.strftime('%d/%m/%Y')}</b>\\n\\n"
-        f"{analysis}\\n\\n"
-        f"<i>Buona settimana · Factor Portfolio · 18 PIE</i>"
-    )
-
-    if "ribilanc" in analysis.lower() or "consiglio" in analysis.lower():
-        rec_id = save_recommendation("weekly_outlook", analysis)
-        buttons = [[
-            {"text": "✅ Vedi istruzioni", "data": f"approve_{rec_id}"},
-            {"text": "❌ Solo nota", "data": f"reject_{rec_id}"}
-        ]]
-        if len(msg) > 4000:
-            send_telegram(msg[:4000] + "...")
-            send_with_buttons("..." + msg[4000:], buttons)
-        else:
-            send_with_buttons(msg, buttons)
-    else:
-        if len(msg) > 4000:
-            send_telegram(msg[:4000] + "...")
-            send_telegram("..." + msg[4000:])
-        else:
-            send_telegram(msg)
-
-# ── ANALISI FONDAMENTALE DOMENICALE ───────────────────────────
-def send_sunday_deep_analysis():
-    log.info("Analisi fondamentale domenicale...")
-    now = datetime.now(timezone.utc)
-
-    prompt = (
-        f"Oggi è domenica {now.strftime('%d/%m/%Y')}. "
-        f"Fai una ricerca approfondita sullo stato fondamentale dei 18 PIE del portafoglio. "
-        f"Cerca notizie recenti su: dividendi annunciati o tagliati, "
-        f"risultati trimestrali, guidance aziendale, cambi strutturali nel settore. "
-        f"Poi produci l'analisi fondamentale mensile del portafoglio:\\n"
-        f"1. TIER 1 Dividend Aristocrats: le streak sono intatte? Novità sui dividendi?\\n"
-        f"2. TIER 2 Quality Compounders: i moat sono ancora solidi?\\n"
-        f"3. TIER 3 Low Volatility: utility e pipeline stabili?\\n"
-        f"4. TIER 4 Momentum: le tesi growth reggono?\\n"
-        f"5. TITOLI SOTTO OSSERVAZIONE: quali meritano attenzione nelle prossime settimane?\\n"
-        f"6. RACCOMANDAZIONI PORTAFOGLIO: aggiustamenti suggeriti con dettagli operativi per T212.\\n"
-        f"Analisi da gestore istituzionale senior. Valutazione complessiva portafoglio 1-5 stelle."
-    )
-
-    analysis = claude_with_search(prompt, max_tokens=2000)
-    if not analysis:
-        return
-
-    msg = (
-        f"🔬 <b>ANALISI FONDAMENTALE — {now.strftime('%d/%m/%Y')}</b>\\n\\n"
-        f"{analysis}\\n\\n"
-        f"<i>Factor Portfolio · 18 PIE · Analisi domenicale Claude + Web Search</i>"
-    )
-
-    rec_id = save_recommendation("sunday_analysis", analysis)
-    buttons = [[
-        {"text": "✅ Vedi istruzioni operativo", "data": f"approve_{rec_id}"},
-        {"text": "❌ Solo lettura", "data": f"reject_{rec_id}"}
-    ]]
-
-    if len(msg) > 4000:
-        send_telegram(msg[:4000] + "...")
-        send_with_buttons("..." + msg[4000:], buttons)
-    else:
-        send_with_buttons(msg, buttons)
-
-
-# ── ROTAZIONE PIE GIORNALIERA ────────────────────────────────
-DAILY_ROTATION = {
-    0: {
-        "label": "PIE01 Aristocrats USA + PIE02 Aristocrats EU + PIE03 Aristocrats Asia",
-        "titoli": ["Procter & Gamble","Johnson & Johnson","Coca-Cola","PepsiCo","Abbott","Medtronic","Walmart","Emerson Electric","Air Liquide","Nestle","L Oreal","Sika","Wolters Kluwer","Dassault Systemes","Linde","DBS Group","Toyota","Sony","Commonwealth Bank Australia"]
+# ── ROTAZIONE PIE ────────────────────────────────────────────
+# Tier 2 e 4 ogni giorno, Tier 1 lun/mer/ven, Tier 3 mar/gio
+DAILY_PIE_ROTATION = {
+    0: {  # Lunedi
+        "label": "PIE01+02+03 (Tier 1 Aristocrats) + PIE07+08+10+11+12+17+18 (Tier 2&4)",
+        "titoli_t1": ["Procter & Gamble","Johnson & Johnson","Coca-Cola","PepsiCo","Abbott","Medtronic","Walmart","Emerson Electric","Air Liquide","Nestle","L'Oreal","Sika","Wolters Kluwer","Dassault Systemes","Linde","DBS Group","Toyota","Sony Group","Commonwealth Bank"],
+        "titoli_t24": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid","NVIDIA","Alphabet","Meta","Amazon","AMD","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"],
     },
-    1: {
-        "label": "PIE04 Champions Energia + PIE05 Champions Finanza + PIE06 REIT Growth",
-        "titoli": ["ExxonMobil","Chevron","Williams Companies","Enbridge","TotalEnergies","EOG Resources","Constellation Energy","HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie","Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water Works"]
+    1: {  # Martedi
+        "label": "PIE04+05+06 (Tier 3 Pipeline/Finanza) + PIE07+08+10+11+12+17+18 (Tier 2&4)",
+        "titoli_t3": ["ExxonMobil","Chevron","Williams Companies","Enbridge","TotalEnergies","EOG Resources","Constellation Energy","HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie","Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water","Constellation Energy","Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy","Coca-Cola","PepsiCo","Unilever","Costco","Colgate-Palmolive","Williams Companies","Enbridge","Kinder Morgan","TC Energy","PPL Corporation"],
+        "titoli_t24": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid","NVIDIA","Alphabet","Meta","Amazon","AMD","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"],
     },
-    2: {
-        "label": "PIE07 Quality Tech + PIE08 Quality Lusso + PIE09 Quality Healthcare",
-        "titoli": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Johnson & Johnson","Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth"]
+    2: {  # Mercoledi
+        "label": "PIE01+02+03 (Tier 1 Aristocrats) + PIE07+08+09+10+11+12+17+18 (Tier 2&4)",
+        "titoli_t1": ["Procter & Gamble","Johnson & Johnson","Coca-Cola","PepsiCo","Abbott","Medtronic","Walmart","Emerson Electric","Air Liquide","Nestle","L'Oreal","Sika","Wolters Kluwer","Dassault Systemes","Linde","DBS Group","Toyota","Sony Group","Commonwealth Bank"],
+        "titoli_t24": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Johnson & Johnson","Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth","Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid","NVIDIA","Alphabet","Meta","Amazon","AMD","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"],
     },
-    3: {
-        "label": "PIE10 Quality Difesa + PIE11 Quality Chip + PIE12 Quality Infrastrutture",
-        "titoli": ["Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung Electronics","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink"]
+    3: {  # Giovedi
+        "label": "PIE13+14+15+16 (Tier 3 Utility/Staples/Gas/Pipeline) + PIE07+08+10+11+12+17+18 (Tier 2&4)",
+        "titoli_t3": ["Constellation Energy","Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy","Procter & Gamble","Coca-Cola","PepsiCo","Unilever","Costco","Colgate-Palmolive","Air Liquide","Linde","Sika","Sherwin-Williams","Air Products","Williams Companies","Enbridge","Kinder Morgan","TC Energy","PPL Corporation"],
+        "titoli_t24": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid","NVIDIA","Alphabet","Meta","Amazon","AMD","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"],
     },
-    4: {
-        "label": "PIE13 Utility Nucleare + PIE14 Consumer Staples + PIE15 Gas Industriali + PIE16 Midstream Pipeline",
-        "titoli": ["Constellation Energy","Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy","Coca-Cola","PepsiCo","Unilever","Costco","Air Liquide","Linde","Sika","Sherwin-Williams","Air Products","Williams Companies","Enbridge","Kinder Morgan","TC Energy","PPL Corporation"]
+    4: {  # Venerdi
+        "label": "PIE04+05+06 (Tier 1 Energia/Finanza/REIT) + PIE07+08+09+10+11+12+17+18 (Tier 2&4)",
+        "titoli_t1": ["ExxonMobil","Chevron","Williams Companies","Enbridge","TotalEnergies","EOG Resources","Constellation Energy","HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie","Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water"],
+        "titoli_t24": ["ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom","LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder","Johnson & Johnson","Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth","Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics","TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron","Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid","NVIDIA","Alphabet","Meta","Amazon","AMD","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"],
     },
-    5: None,
-    6: {
-        "label": "PIE17 AI Tech + PIE18 EM Growth + Revisione portafoglio completo",
-        "titoli": ["NVIDIA","Alphabet","Meta","Amazon","AMD","KWEB China Internet ETF","Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"]
+    5: None,  # Sabato — riposo
+    6: {  # Domenica — Weekly Review completa
+        "label": "Tutti i 18 PIE — Weekly Review completa",
     }
 }
 
-def send_daily_pie_analysis():
-    """Analisi giornaliera dei PIE in rotazione settimanale."""
+# ── MORNING BRIEF ─────────────────────────────────────────────
+def send_morning_brief():
     now = datetime.now(timezone.utc)
     weekday = now.weekday()
-    rotation = DAILY_ROTATION.get(weekday)
+    rotation = DAILY_PIE_ROTATION.get(weekday)
 
     if not rotation:
-        log.info("Sabato — nessuna analisi PIE.")
+        log.info("Sabato — nessun Morning Brief.")
         return
 
-    label = rotation["label"]
-    titoli = rotation["titoli"]
-    log.info(f"Analisi PIE giornaliera: {label}")
-
-    is_sunday = weekday == 6
+    log.info(f"Morning Brief: {rotation['label']}")
     is_friday = weekday == 4
+    is_monday = weekday == 0
 
-    if is_sunday:
-        extra = (
-            "Dopo aver analizzato i PIE17 e PIE18, produci una REVISIONE COMPLETA del portafoglio: "
-            "valutazione complessiva 1-5 stelle, i 3 titoli piu solidi e i 3 piu a rischio, "
-            "raccomandazione strategica generale per le prossime 2 settimane."
-        )
+    # Raccogli tutti i titoli del giorno
+    tutti_titoli = []
+    for key in ["titoli_t1", "titoli_t3", "titoli_t24"]:
+        tutti_titoli.extend(rotation.get(key, []))
+    # Rimuovi duplicati mantenendo ordine
+    seen = set()
+    titoli_unici = [t for t in tutti_titoli if not (t in seen or seen.add(t))]
+
+    extra = ""
+    if is_monday:
+        extra = "Essendo lunedi, includi una breve anticipazione della settimana: earnings attesi e dati macro rilevanti."
     elif is_friday:
-        extra = (
-            "Essendo venerdi, aggiungi un bilancio settimanale per questi PIE: "
-            "la settimana e stata positiva o negativa per il gruppo? "
-            "Outlook per la prossima settimana."
-        )
-    else:
-        extra = ""
+        extra = "Essendo venerdi, aggiungi un bilancio settimanale: la settimana e stata positiva o negativa per il portafoglio?"
 
     prompt = (
-        f"Oggi e {now.strftime('%A %d/%m/%Y')}. "
-        f"Analisi giornaliera del Factor Portfolio — {label}.\n\n"
-        f"Cerca le ultime notizie su questi titoli: {', '.join(titoli)}.\n\n"
-        f"Per ogni titolo che ha notizie rilevanti analizza:\n"
-        f"• Cosa e successo\n"
-        f"• Impatto sulla tesi dividend growth/quality\n"
-        f"• Azione consigliata (mantieni / monitora / aggiusta peso quando investi)\n\n"
-        f"Per i titoli senza notizie rilevanti scrivi solo: [Nessuna novita — tesi confermata]\n\n"
-        f"Struttura finale:\n"
-        f"1. SINTESI: 2 righe sul gruppo di PIE oggi\n"
-        f"2. TITOLI IN EVIDENZA: solo quelli con notizie rilevanti\n"
-        f"3. TUTTI GLI ALTRI: lista rapida con stato\n"
-        f"4. CONSIGLIO OPERATIVO: azione concreta se necessaria per T212\n"
-        f"{extra}"
+        f"Oggi e {now.strftime('%A %d/%m/%Y')}. Sono le 08:00 CET — apertura mercati europei.\n\n"
+        f"Cerca le ultime notizie finanziarie su questi titoli del portafoglio:\n"
+        f"{', '.join(titoli_unici)}\n\n"
+        f"Produci il Morning Brief professionale con questa struttura:\n\n"
+        f"1. SINTESI APERTURA (2 righe): contesto macro del giorno\n"
+        f"2. EVENTI CRITICI (se presenti): notizie che cambiano la tesi di investimento\n"
+        f"   Per ogni evento: cosa e successo | impatto sulla tesi | azione consigliata\n"
+        f"3. DA MONITORARE: sviluppi da tenere d'occhio nelle prossime ore\n"
+        f"4. CONFERMATI: titoli con notizie positive che rafforzano la tesi\n"
+        f"5. TITOLI SENZA NOVITA: lista rapida con [tesi confermata]\n"
+        f"6. CONSIGLIO OPERATIVO: se necessario, modifica pesi con % precise su TUTTI i titoli del PIE\n"
+        f"{extra}\n\n"
+        f"Rating giornata: X/5 stelle con motivazione in una frase."
     )
 
     analysis = claude_with_search(prompt, max_tokens=2000)
     if not analysis:
-        log.error("Analisi PIE giornaliera fallita")
+        log.error("Morning Brief fallito")
         return
 
-    icon = "🔬" if is_sunday else ("📊" if is_friday else "📋")
+    day_names = {0:"Lunedi",1:"Martedi",2:"Mercoledi",3:"Giovedi",4:"Venerdi",5:"Sabato",6:"Domenica"}
+    icon = "📊" if is_friday else ("📋" if is_monday else "☀️")
+
     msg = (
-        f"{icon} <b>ANALISI PIE — {label}</b>\n"
-        f"<i>{now.strftime('%d/%m/%Y')}</i>\n\n"
+        f"{icon} <b>MORNING BRIEF — {day_names[weekday]} {now.strftime('%d/%m/%Y')}</b>\n"
+        f"<i>{rotation['label']}</i>\n\n"
         f"{analysis}\n\n"
-        f"<i>Factor Portfolio · Claude + Web Search</i>"
+        f"<i>Factor Portfolio · 18 PIE · Claude + Web Search</i>"
     )
 
-    if any(kw in analysis.lower() for kw in ["consiglio operativo", "aggiusta", "riduci", "aumenta", "sostituisci"]):
-        rec_id = save_recommendation("daily_pie_analysis", analysis)
-        buttons = [[
-            {"text": "✅ Vedi istruzioni T212", "data": f"approve_{rec_id}"},
-            {"text": "❌ Solo nota", "data": f"reject_{rec_id}"}
-        ]]
+    if has_operational_recommendation(analysis):
+        # Genera istruzioni T212 specifiche
+        t212 = generate_t212_instructions(analysis)
+        rec_id = save_recommendation("morning_brief", analysis, t212 or "")
         if len(msg) > 4000:
-            send_telegram(msg[:4000] + "...")
-            send_with_buttons("..." + msg[4000:], buttons)
+            send_telegram(msg[:4000] + "...\n<i>(continua)</i>")
+            send_with_buttons("...<i>(segue)</i>\n" + msg[4000:], rec_id, has_t212=True)
         else:
-            send_with_buttons(msg, buttons)
+            send_with_buttons(msg, rec_id, has_t212=True)
     else:
+        rec_id = save_recommendation("morning_brief", analysis, "")
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...\n<i>(continua)</i>")
+            send_with_buttons("...<i>(segue)</i>\n" + msg[4000:], rec_id, has_t212=False)
+        else:
+            send_with_buttons(msg, rec_id, has_t212=False)
+
+# ── EVENING BRIEF (solo eventi critici) ──────────────────────
+def send_evening_brief():
+    now = datetime.now(timezone.utc)
+    weekday = now.weekday()
+    if weekday == 6:  # Domenica nessun evening
+        return
+
+    log.info("Evening Brief — scansione eventi critici su tutti i 100 titoli...")
+
+    tutti = [
+        "Procter & Gamble","Johnson & Johnson","Coca-Cola","PepsiCo","Abbott","Medtronic","Walmart","Emerson Electric",
+        "Air Liquide","Nestle","L'Oreal","Sika","Wolters Kluwer","Dassault Systemes","Linde",
+        "DBS Group","Toyota","Sony Group","Commonwealth Bank",
+        "ExxonMobil","Chevron","Williams Companies","Enbridge","TotalEnergies","EOG Resources","Constellation Energy",
+        "HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie",
+        "Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water",
+        "ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom",
+        "LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder",
+        "Johnson & Johnson","Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth",
+        "Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics",
+        "TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron",
+        "Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid",
+        "Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy",
+        "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Air Products","Kinder Morgan","TC Energy","PPL Corporation",
+        "NVIDIA","Alphabet","Meta","Amazon","AMD",
+        "Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"
+    ]
+
+    prompt = (
+        f"Oggi e {now.strftime('%d/%m/%Y')}. Sono le 20:00 CET — chiusura mercati.\n\n"
+        f"Fai una scansione rapida degli ULTIMI EVENTI CRITICI accaduti oggi su questi 100 titoli del portafoglio:\n"
+        f"{', '.join(tutti)}\n\n"
+        f"REGOLA FONDAMENTALE: invia una risposta SOLO se hai trovato almeno un evento critico.\n"
+        f"Un evento critico e: earnings a sorpresa, taglio dividendo, crollo >5%, acquisizione, "
+        f"decisione FDA, contratto rilevante, guidance rivista, cambio CEO, indagine regolatoria.\n\n"
+        f"Se NON hai trovato eventi critici oggi, rispondi ESATTAMENTE con: 'NESSUN_EVENTO_CRITICO'\n\n"
+        f"Se hai trovato eventi critici, produci:\n"
+        f"1. EVENTO: [nome titolo] — cosa e successo\n"
+        f"2. IMPATTO sul PIE e sulla tesi\n"
+        f"3. AZIONE: mantieni / monitora / modifica peso (con % precise su TUTTI i titoli del PIE)\n"
+        f"Rating urgenza: BASSO / MEDIO / ALTO"
+    )
+
+    analysis = claude_with_search(prompt, max_tokens=1500)
+    if not analysis:
+        log.error("Evening Brief fallito")
+        return
+
+    # Se nessun evento critico, silenzio professionale
+    if "NESSUN_EVENTO_CRITICO" in analysis:
+        log.info("Evening Brief: nessun evento critico — silenzio professionale")
+        return
+
+    log.info("Evening Brief: eventi critici trovati — invio notifica")
+
+    msg = (
+        f"🔴 <b>EVENING BRIEF — {now.strftime('%d/%m/%Y')}</b>\n"
+        f"<i>Evento critico rilevato sul portafoglio</i>\n\n"
+        f"{analysis}\n\n"
+        f"<i>Factor Portfolio · 18 PIE · Claude + Web Search</i>"
+    )
+
+    if has_operational_recommendation(analysis):
+        t212 = generate_t212_instructions(analysis)
+        rec_id = save_recommendation("evening_brief", analysis, t212 or "")
         if len(msg) > 4000:
             send_telegram(msg[:4000] + "...")
-            send_telegram("..." + msg[4000:])
+            send_with_buttons("..." + msg[4000:], rec_id, has_t212=True)
         else:
-            send_telegram(msg)
+            send_with_buttons(msg, rec_id, has_t212=True)
+    else:
+        rec_id = save_recommendation("evening_brief", analysis, "")
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...")
+            send_with_buttons("..." + msg[4000:], rec_id, has_t212=False)
+        else:
+            send_with_buttons(msg, rec_id, has_t212=False)
+
+# ── WEEKLY REVIEW (domenica) ──────────────────────────────────
+def send_weekly_review():
+    now = datetime.now(timezone.utc)
+    log.info("Weekly Review domenicale — analisi completa 18 PIE...")
+
+    prompt = (
+        f"Oggi e domenica {now.strftime('%d/%m/%Y')} — Weekly Review del Factor Portfolio.\n\n"
+        f"Cerca le notizie della settimana su TUTTI i 100 titoli del portafoglio e produci "
+        f"la revisione settimanale completa:\n\n"
+        f"1. VALUTAZIONE SETTIMANA: rating 1-5 stelle con sintesi in 3 righe\n\n"
+        f"2. ANALISI PER TIER:\n"
+        f"   TIER 1 Dividend Aristocrats: streak intatte? Novita sui dividendi?\n"
+        f"   TIER 2 Quality Compounders: moat ancora solidi? Cambi competitivi?\n"
+        f"   TIER 3 Low Volatility: utility e pipeline stabili?\n"
+        f"   TIER 4 Momentum: tesi growth reggono?\n\n"
+        f"3. TOP 3 NOTIZIE DELLA SETTIMANA: le piu rilevanti per il portafoglio\n\n"
+        f"4. TITOLI SOTTO OSSERVAZIONE: max 3 titoli che meritano attenzione\n\n"
+        f"5. EARNINGS PROSSIMA SETTIMANA: solo titoli del portafoglio\n\n"
+        f"6. RACCOMANDAZIONI OPERATIVE: se necessario, modifiche pesi con % precise "
+        f"su TUTTI i titoli del PIE coinvolto. Se nessuna modifica, scrivi esplicitamente "
+        f"'Nessuna modifica necessaria — portafoglio solido.'\n\n"
+        f"7. CONSIGLIO STRATEGICO: una frase per la settimana che inizia."
+    )
+
+    analysis = claude_with_search(prompt, max_tokens=2500)
+    if not analysis:
+        log.error("Weekly Review fallita")
+        return
+
+    msg = (
+        f"🔬 <b>WEEKLY REVIEW — {now.strftime('%d/%m/%Y')}</b>\n"
+        f"<i>Analisi completa 18 PIE · 100 titoli</i>\n\n"
+        f"{analysis}\n\n"
+        f"<i>Factor Portfolio · Claude + Web Search · Buona settimana</i>"
+    )
+
+    if has_operational_recommendation(analysis):
+        t212 = generate_t212_instructions(analysis)
+        rec_id = save_recommendation("weekly_review", analysis, t212 or "")
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...\n<i>(continua)</i>")
+            send_with_buttons("...<i>(segue)</i>\n" + msg[4000:], rec_id, has_t212=True)
+        else:
+            send_with_buttons(msg, rec_id, has_t212=True)
+    else:
+        rec_id = save_recommendation("weekly_review", analysis, "")
+        if len(msg) > 4000:
+            send_telegram(msg[:4000] + "...\n<i>(continua)</i>")
+            send_with_buttons("...<i>(segue)</i>\n" + msg[4000:], rec_id, has_t212=False)
+        else:
+            send_with_buttons(msg, rec_id, has_t212=False)
 
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
-    # Briefing mattutino — apertura mercati EU
-    schedule.every().day.at("07:00").do(send_morning_briefing)
-    # Briefing NYSE — apertura Wall Street
-    schedule.every().day.at("14:30").do(send_nyse_briefing)
-    # Report serale — chiusura mercati
-    schedule.every().day.at("17:30").do(send_evening_report)
-    # Outlook settimanale — lunedi mattina
-    schedule.every().monday.at("06:30").do(send_weekly_outlook)
-    # Analisi fondamentale — domenica
-    schedule.every().sunday.at("09:00").do(send_sunday_deep_analysis)
-    # Analisi PIE giornaliera in rotazione — 17:00 CET
-    schedule.every().day.at("15:00").do(send_daily_pie_analysis)
-    # Callback bottoni Telegram — ogni minuto
+    schedule.every().day.at("07:00").do(send_morning_brief)     # 09:00 CET
+    schedule.every().day.at("18:00").do(send_evening_brief)     # 20:00 CET
+    schedule.every().sunday.at("08:00").do(send_weekly_review)  # 10:00 CET domenica
     schedule.every(1).minutes.do(check_callbacks)
-    # Pulizia database — ogni notte
     schedule.every().day.at("02:00").do(cleanup)
 
     log.info("Scheduler v3 avviato.")
     send_telegram(
-        "🚀 <b>Portfolio Agent v3 avviato</b>\\n\\n"
-        "<b>Modalità:</b> Analisi Claude + Web Search\\n"
-        "<b>Copertura:</b> 98 titoli · 18 PIE · tutti i mercati\\n\\n"
-        "📋 Briefing mattutino: 09:00 CET\\n"
-        "🗽 Briefing NYSE: 16:30 CET\\n"
-        "🟢 Report serale: 19:30 CET\\n"
-        "📊 Outlook lunedì: 08:30 CET\\n"
-        "🔬 Analisi domenicale: 11:00 CET\\n\\n"
-        "<i>Nessun limite di ticker · Analisi professionale · Bottoni Approva/Rifiuta</i>"
+        "🚀 <b>Portfolio Agent v3 avviato</b>\n\n"
+        "<b>Struttura professionale:</b>\n"
+        "☀️ 09:00 CET — Morning Brief (Tier 2&4 ogni giorno + Tier 1/3 in rotazione)\n"
+        "🔴 20:00 CET — Evening Brief (solo eventi critici su tutti i 100 titoli)\n"
+        "🔬 Domenica 10:00 — Weekly Review completa 18 PIE\n\n"
+        "<b>Bottoni:</b>\n"
+        "✅ Vedi istruzioni T212 → istruzioni operative specifiche\n"
+        "📝 Solo nota → annota senza azione\n\n"
+        "<i>Copertura totale · 100 titoli · Claude + Web Search</i>"
     )
 
     while True:
@@ -755,11 +618,11 @@ def run_scheduler():
 
 # ── MAIN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
-    log.info("Portfolio Agent v3 — Claude + Web Search")
+    log.info("Portfolio Agent v3 — Morning/Evening Brief + Weekly Review")
     init_db()
-    result = load_portfolio_from_github()
-    if result and result[0]:
-        reload_portfolio(result[0])
+    result, sha = load_portfolio_from_github()
+    if result:
+        reload_portfolio(result)
         log.info("Portfolio caricato da GitHub")
     log.info(f"Ticker totali: {len(ALL_TICKERS)}")
     run_scheduler()
