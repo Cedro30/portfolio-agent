@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Factor Portfolio — 18 PIE</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 20px; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; color: #fff; }
+  .sub { font-size: 12px; color: #888; margin-bottom: 24px; }
+  .last-update { font-size: 11px; color: #555; margin-bottom: 20px; }
+
+  .tier-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #666; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #222; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .pie { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 14px; }
+  .pie-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .pie-name { font-size: 13px; font-weight: 500; color: #fff; }
+  .pie-meta { text-align: right; }
+  .pie-weight { font-size: 18px; font-weight: 500; }
+  .pie-tier { font-size: 10px; color: #666; }
+  .t1 { color: #2ecf8a; }
+  .t2 { color: #5b9cf6; }
+  .t3 { color: #f0b255; }
+  .t4 { color: #a07ef0; }
+
+  .holding { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .holding-bar-bg { flex: 1; height: 4px; background: #2a2a2a; border-radius: 2px; }
+  .holding-bar { height: 4px; border-radius: 2px; }
+  .holding-name { font-size: 11px; color: #aaa; min-width: 140px; }
+  .holding-pct { font-size: 11px; color: #666; min-width: 36px; text-align: right; }
+  .holding-changed { color: #f0b255 !important; }
+
+  .summary { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 24px; }
+  .stat { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px; text-align: center; }
+  .stat-val { font-size: 22px; font-weight: 500; }
+  .stat-lbl { font-size: 10px; color: #666; margin-top: 4px; }
+
+  .loading { text-align: center; padding: 60px; color: #555; }
+  .error { text-align: center; padding: 40px; color: #E24B4A; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Factor Portfolio — 18 PIE</h1>
+<p class="sub">Dividend Growth · Quality Compounders · Low Volatility · Momentum</p>
+
+<div id="last-update" class="last-update"></div>
+<div class="summary" id="summary"></div>
+<div id="content"><div class="loading">Caricamento portafoglio...</div></div>
+
+<script>
+const TIER_COLORS = { 1: 't1', 2: 't2', 3: 't3', 4: 't4' };
+const TIER_NAMES  = { 1: 'Tier 1 — Dividend Aristocrats (40%)', 2: 'Tier 2 — Quality Compounders (30%)', 3: 'Tier 3 — Low Volatility Income (20%)', 4: 'Tier 4 — Momentum Growth (10%)' };
+
+// Pesi reali per PIE (da HTML v4)
+const REAL_WEIGHTS = {
+  PIE01_Aristocrats_USA:        {PG:16,JNJ:15,KO:14,PEP:12,ABT:11,MDT:11,WMT:10,EMR:11},
+  PIE02_Aristocrats_EU:         {'AI.PA':18,'NESN.SW':15,'OR.PA':14,'SIKA.SW':13,'WKL.AS':12,'DSY.PA':12,LIN:16},
+  PIE03_Aristocrats_Asia:       {'D05.SI':38,'7203.T':30,'6758.T':20,'CBA.AX':12},
+  PIE04_Champions_Energia:      {XOM:20,CVX:18,WMB:16,ENB:14,TTE:12,EOG:10,CEG:10},
+  PIE05_Champions_Finanza:      {'HSBA.L':18,'CS.PA':16,'ALV.DE':16,AIG:14,'UCG.MI':12,'BNP.PA':12,'MQG.AX':12},
+  PIE06_REIT_Growth:            {O:22,PLD:18,AMT:18,EQIX:14,WPC:14,AWK:14},
+  PIE07_Quality_Tech:           {ASML:22,MSFT:20,TXN:18,AAPL:16,SAP:14,AVGO:10},
+  PIE08_Quality_Lusso:          {'MC.PA':24,'RMS.PA':20,'CFR.SW':16,RACE:16,'MONC.MI':12,EL:12},
+  PIE09_Quality_Healthcare:     {JNJ:18,LLY:16,'NOVOB.CO':14,AZN:14,TMO:12,'ROG.SW':12,UNH:14},
+  PIE10_Quality_Difesa:         {LMT:18,NOC:16,'RHM.DE':16,BAESY:14,'AIR.PA':14,BWXT:12,GD:10},
+  PIE11_Quality_Chip:           {TSM:28,'005930.KS':22,'000660.KS':18,QCOM:16,'8035.T':16},
+  PIE12_Quality_Infrastrutture: {BIP:26,'DG.PA':22,'FER.MC':20,'GET.PA':17,'NG.L':15},
+  PIE13_Utility_Nucleare:       {CEG:18,'ENEL.MI':16,'IBE.MC':15,ETR:13,'SRG.MI':12,'TRN.MI':12,D:14},
+  PIE14_Consumer_Staples:       {PG:20,KO:18,PEP:16,'ULVR.L':16,COST:16,CL:14},
+  PIE15_Gas_Industriali:        {'AI.PA':28,LIN:24,'SIKA.SW':20,SHW:14,APD:14},
+  PIE16_Midstream_Pipeline:     {WMB:28,ENB:24,KMI:20,TRP:16,PPL:12},
+  PIE17_AI_Tech:                {NVDA:25,GOOGL:22,META:20,AMZN:18,AMD:10,KWEB:5},
+  PIE18_EM_Growth:              {INFY:20,HDB:18,ITUB:16,VALE:14,'RELIANCE.NS':12,KWEB:12,IBN:8}
+};
+
+async function loadPortfolio() {
+  try {
+    // Carica portfolio.json dal repo GitHub
+    const username = 'Cedro30';
+    const repo = 'portfolio-agent';
+    const url = `https://raw.githubusercontent.com/${username}/${repo}/main/portfolio.json?t=${Date.now()}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch(e) {
+    document.getElementById('content').innerHTML = `<div class="error">Errore caricamento portfolio.json: ${e.message}<br><small>Verifica che il repo GitHub sia pubblico e che portfolio.json esista.</small></div>`;
+    return null;
+  }
+}
+
+function render(portfolio) {
+  const names = portfolio.ticker_names || {};
+  const updatedWeights = portfolio.pie_weights || {};
+  const lastUpdate = portfolio.last_updated || 'N/D';
+  const lastChange = portfolio.last_change || '';
+
+  document.getElementById('last-update').textContent =
+    `Ultimo aggiornamento: ${lastUpdate}${lastChange ? ' · ' + lastChange : ''}`;
+
+  // Summary
+  const pies = Object.keys(portfolio.pies);
+  const tickers = new Set(Object.values(portfolio.pies).flatMap(p => p.tickers));
+  document.getElementById('summary').innerHTML = `
+    <div class="stat"><div class="stat-val t1">${pies.length}</div><div class="stat-lbl">PIE totali</div></div>
+    <div class="stat"><div class="stat-val t2">${tickers.size}</div><div class="stat-lbl">Titoli unici</div></div>
+    <div class="stat"><div class="stat-val t3">18</div><div class="stat-lbl">Paesi</div></div>
+    <div class="stat"><div class="stat-val t4">4</div><div class="stat-lbl">Tier strategici</div></div>
+  `;
+
+  // Raggruppa per tier
+  const byTier = {1:[],2:[],3:[],4:[]};
+  for (const [pieName, pieData] of Object.entries(portfolio.pies)) {
+    byTier[pieData.tier].push([pieName, pieData]);
+  }
+
+  let html = '';
+  for (const tier of [1,2,3,4]) {
+    html += `<div class="tier-label">${TIER_NAMES[tier]}</div><div class="grid">`;
+    for (const [pieName, pieData] of byTier[tier]) {
+      const color = TIER_COLORS[tier];
+      const label = pieName.replace('PIE','').replace(/\d+_/,'').replace(/_/g,' ');
+      const baseWeights = REAL_WEIGHTS[pieName] || {};
+      const overrideWeights = updatedWeights[pieName] || {};
+
+      html += `<div class="pie">
+        <div class="pie-header">
+          <div class="pie-name">${label}</div>
+          <div class="pie-meta">
+            <div class="pie-weight ${color}">${pieData.peso_target}%</div>
+            <div class="pie-tier">Tier ${tier}</div>
+          </div>
+        </div>`;
+
+      for (const ticker of pieData.tickers) {
+        const name = names[ticker] || ticker;
+        const basePct = baseWeights[ticker] || Math.round(100/pieData.tickers.length);
+        const pct = overrideWeights[ticker] || basePct;
+        const changed = overrideWeights[ticker] && overrideWeights[ticker] !== basePct;
+        html += `<div class="holding">
+          <div class="holding-name ${changed ? 'holding-changed' : ''}" title="${ticker}">${name}</div>
+          <div class="holding-bar-bg"><div class="holding-bar ${color}" style="width:${pct}%;background:currentColor;opacity:0.6"></div></div>
+          <div class="holding-pct ${changed ? 'holding-changed' : ''}">${pct}%</div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+loadPortfolio().then(p => { if(p) render(p); });
+</script>
+</body>
+</html>
