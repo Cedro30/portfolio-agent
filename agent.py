@@ -346,10 +346,20 @@ def claude_with_search(prompt, max_tokens=1500):
 
 def has_operational_recommendation(text):
     """Controlla se il testo contiene una raccomandazione operativa concreta con pesi."""
-    keywords = ["riduci ", "aumenta ", "sostituisci ", "sposta ", "modifica il peso",
-                "dal ", "% al ", "nuovo peso", "ribilancia"]
+    keywords = [
+        "riduci ", "aumenta ", "sostituisci ", "sposta ", "modifica il peso",
+        "dal ", "% al ", "nuovo peso", "ribilancia",
+        "era ", "nuova allocazione", "riduzione peso", "nuovo peso",
+        "% (era", "consiglio operativo", "azione consigliata"
+    ]
+    # Conta quante keyword sono presenti
     text_lower = text.lower()
-    return sum(1 for kw in keywords if kw in text_lower) >= 2
+    count = sum(1 for kw in keywords if kw in text_lower)
+    # Controlla pattern di cambio peso: "18% (era 20%)" o "dal 20% al 18%"
+    import re
+    peso_changes = re.findall(r"\d+%.{1,10}era.{1,5}\d+%", text_lower)
+    dal_al = re.findall(r"dal \d+% al \d+%", text_lower)
+    return count >= 2 or len(peso_changes) >= 1 or len(dal_al) >= 1
 
 # ── ROTAZIONE PIE ────────────────────────────────────────────
 # Tier 2 e 4 ogni giorno, Tier 1 lun/mer/ven, Tier 3 mar/gio
