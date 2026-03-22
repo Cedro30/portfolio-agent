@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-19",
+  "last_updated": "2026-03-22 - Approvato via Telegram",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -324,5 +324,17 @@
     "RELIANCE.NS": "Reliance Industries",
     "NG.L": "National Grid",
     "CL": "Colgate-Palmolive"
-  }
+  },
+  "pie_weights": {
+    "PIE04_Champions_Energia": {
+      "XOM": 18,
+      "CVX": 16,
+      "WMB": 18,
+      "ENB": 16,
+      "TTE": 8,
+      "EOG": 12,
+      "CEG": 12
+    }
+  },
+  "last_change": "PIE04 Champions Energia: ridotto TotalEnergies 12%→8%, aumentato Williams Companies 16%→18%, Enbridge 14%→16%, EOG 10%→12%, CEG 10%→12%"
 }
