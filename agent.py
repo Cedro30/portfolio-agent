@@ -199,29 +199,45 @@ def handle_callback(data, callback_query_id):
         return
 
     if action == "t212":
-        # Invia istruzioni T212 specifiche
         row = get_recommendation(rec_id)
         if row:
             details, t212_instructions = row
+            update_recommendation(rec_id, "approved")
+            
+            # Aggiorna pesi su GitHub
+            portfolio_data, sha = load_portfolio_from_github()
+            if portfolio_data:
+                ok, result = update_portfolio_weights_on_github(details, portfolio_data, sha)
+                if ok:
+                    reload_portfolio(portfolio_data)
+                    update_msg = f"\n\n✅ <b>Pesi aggiornati automaticamente</b> in {result} — le prossime analisi useranno i nuovi pesi."
+                else:
+                    update_msg = f"\n\n⚠️ Aggiornamento automatico non riuscito ({result}) — aggiorna manualmente portfolio.json."
+            else:
+                update_msg = ""
+            
+            # Invia istruzioni T212
             if t212_instructions:
                 send_telegram(
                     f"📱 <b>ISTRUZIONI TRADING 212</b>\n\n"
-                    f"{t212_instructions}\n\n"
-                    f"<i>Esegui quando sei pronto. Puoi farlo in qualsiasi momento.</i>"
+                    f"{t212_instructions}"
+                    f"{update_msg}\n\n"
+                    f"<i>Esegui quando sei pronto.</i>"
                 )
             else:
-                # Genera istruzioni T212 al momento
                 instructions = generate_t212_instructions(details)
                 if instructions:
-                    update_recommendation(rec_id, "approved")
                     send_telegram(
                         f"📱 <b>ISTRUZIONI TRADING 212</b>\n\n"
-                        f"{instructions}\n\n"
+                        f"{instructions}"
+                        f"{update_msg}\n\n"
                         f"<i>Esegui quando sei pronto.</i>"
                     )
+                else:
+                    send_telegram(f"📱 Raccomandazione approvata.{update_msg}")
     elif action == "note":
         update_recommendation(rec_id, "noted")
-        send_telegram("📝 <i>Annotato. Nessuna azione richiesta.</i>")
+        send_telegram("📝 <i>Annotato. Nessuna azione richiesta. I pesi rimangono invariati.</i>")
 
 def generate_t212_instructions(analysis):
     """Genera istruzioni operative specifiche per T212 basate sull'analisi."""
@@ -600,6 +616,123 @@ def send_weekly_review():
             send_with_buttons("...<i>(segue)</i>\n" + msg[4000:], rec_id, has_t212=False)
         else:
             send_with_buttons(msg, rec_id, has_t212=False)
+
+
+# ── AGGIORNAMENTO PESI SU GITHUB ─────────────────────────────
+def extract_new_weights(analysis_text):
+    """Estrae i nuovi pesi dal testo di analisi di Claude.
+    Cerca pattern come: 'ExxonMobil: 18% (era 20%)' o 'NVIDIA: 25%'"""
+    import re
+    weights = {}
+    
+    # Pattern: "Nome Titolo: XX% (era YY%)" o "Nome Titolo: XX%"
+    patterns = [
+        r"([A-Za-z &']+):\s*\*{0,2}(\d{1,3})%\*{0,2}\s*[(]era",
+        r"-\s*([A-Za-z &']+):\s*\*{0,2}(\d{1,3})%\*{0,2}",
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, analysis_text)
+        for name, pct in matches:
+            name = name.strip().strip('*').strip()
+            if len(name) > 2:
+                weights[name] = int(pct)
+    
+    return weights
+
+def find_pie_for_weights(weights, portfolio_data):
+    """Trova quale PIE corrisponde ai titoli con nuovi pesi."""
+    ticker_names = portfolio_data.get("ticker_names", {})
+    # Inverti: nome -> ticker
+    name_to_ticker = {v.lower(): k for k, v in ticker_names.items()}
+    
+    # Per ogni PIE, controlla quanti titoli matchano
+    best_pie = None
+    best_count = 0
+    
+    for pie_name, pie_data in portfolio_data["pies"].items():
+        count = 0
+        for weight_name in weights.keys():
+            for ticker in pie_data["tickers"]:
+                ticker_name = ticker_names.get(ticker, ticker).lower()
+                if weight_name.lower() in ticker_name or ticker_name in weight_name.lower():
+                    count += 1
+                    break
+        if count > best_count:
+            best_count = count
+            best_pie = pie_name
+    
+    return best_pie if best_count >= 2 else None
+
+def update_portfolio_weights_on_github(analysis_text, portfolio_data, sha):
+    """Estrae i nuovi pesi dall'analisi e aggiorna portfolio.json su GitHub."""
+    if not GITHUB_TOKEN or not GITHUB_USERNAME:
+        return False, "GitHub non configurato"
+    
+    weights = extract_new_weights(analysis_text)
+    if not weights:
+        return False, "Nessun peso trovato nel testo"
+    
+    log.info(f"Pesi estratti: {weights}")
+    
+    # Trova il PIE corrispondente
+    pie_name = find_pie_for_weights(weights, portfolio_data)
+    if not pie_name:
+        return False, "PIE non identificato"
+    
+    log.info(f"PIE identificato: {pie_name}")
+    
+    # Verifica che i pesi sommino a 100
+    total = sum(weights.values())
+    if abs(total - 100) > 5:
+        return False, f"I pesi sommano a {total}% — verifica prima di salvare"
+    
+    # Salva i pesi come note nel portfolio (non modifichiamo la struttura dei ticker)
+    if "pie_weights" not in portfolio_data:
+        portfolio_data["pie_weights"] = {}
+    
+    ticker_names = portfolio_data.get("ticker_names", {})
+    name_to_ticker = {v.lower(): k for k, v in ticker_names.items()}
+    
+    pie_weights = {}
+    for weight_name, pct in weights.items():
+        # Trova il ticker corrispondente
+        for ticker in portfolio_data["pies"][pie_name]["tickers"]:
+            ticker_name = ticker_names.get(ticker, ticker).lower()
+            if weight_name.lower() in ticker_name or ticker_name in weight_name.lower():
+                pie_weights[ticker] = pct
+                break
+    
+    if pie_weights:
+        portfolio_data["pie_weights"][pie_name] = pie_weights
+        portfolio_data["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        portfolio_data["last_change"] = f"{pie_name}: {weights}"
+    
+    # Aggiorna su GitHub
+    import json as json_module, base64
+    content_str = json_module.dumps(portfolio_data, indent=2, ensure_ascii=False)
+    content_b64 = base64.b64encode(content_str.encode()).decode()
+    
+    url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{PORTFOLIO_FILE}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    
+    payload = {
+        "message": f"Aggiornamento pesi {pie_name} — approvato via Telegram",
+        "content": content_b64,
+        "sha": sha
+    }
+    
+    try:
+        r = requests.put(url, headers=headers, json=payload, timeout=15)
+        if r.ok:
+            log.info(f"portfolio.json aggiornato su GitHub: {pie_name}")
+            return True, pie_name
+        else:
+            log.error(f"GitHub update error: {r.status_code} {r.text[:200]}")
+            return False, f"Errore GitHub: {r.status_code}"
+    except Exception as e:
+        log.error(f"GitHub update exception: {e}")
+        return False, str(e)
 
 # ── SCHEDULER ─────────────────────────────────────────────────
 def run_scheduler():
