@@ -361,13 +361,26 @@ def generate_t212_instructions(analysis):
 
 def has_operational_recommendation(text):
     import re
-    keywords = ["riduci ","aumenta ","sostituisci ","nuova allocazione",
-                "riduzione peso","% (era","consiglio operativo","modifica il peso"]
+    keywords = [
+        "riduci ","aumenta ","sostituisci ","nuova allocazione",
+        "riduzione peso","% (era","consiglio operativo","modifica il peso",
+        "raccomandazioni operative","incremento peso","decremento peso",
+        "invariato","(+","(-"
+    ]
     text_lower = text.lower()
     count = sum(1 for kw in keywords if kw in text_lower)
-    peso_changes = re.findall(r"\d+%.{1,10}era.{1,5}\d+%", text_lower)
-    dal_al = re.findall(r"dal \d+% al \d+%", text_lower)
-    return count >= 2 or len(peso_changes) >= 1 or len(dal_al) >= 1
+    # Pattern: "18% (+2%)" o "12% (-2%)" o "18% (era 20%)" o "dal 20% al 18%"
+    peso_changes = re.findall(r"\d+%\s*[(][+-]\d+%[)]", text_lower)
+    peso_era    = re.findall(r"\d+%.{1,10}era.{1,5}\d+%", text_lower)
+    dal_al      = re.findall(r"dal \d+% al \d+%", text_lower)
+    # Presenza della sezione raccomandazioni operative con almeno un titolo
+    has_section = "raccomandazioni operative" in text_lower
+    has_titles  = len(re.findall(r":\s*\d+%", text_lower)) >= 3
+    return (count >= 3 or
+            len(peso_changes) >= 1 or
+            len(peso_era) >= 1 or
+            len(dal_al) >= 1 or
+            (has_section and has_titles))
 
 # ── WEEKLY REVIEW — lunedi 09:00 CET ─────────────────────────
 def send_weekly_review():
