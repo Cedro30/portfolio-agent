@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-23 - Weekly Review approvata",
+  "last_updated": "2026-03-23 - Snam rimossa da PIE13",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -158,7 +158,6 @@
         "ENEL.MI",
         "IBE.MC",
         "ETR",
-        "SRG.MI",
         "TRN.MI",
         "D"
       ]
@@ -300,7 +299,6 @@
     "ENEL.MI": "Enel",
     "IBE.MC": "Iberdrola",
     "ETR": "Entergy",
-    "SRG.MI": "Snam",
     "TRN.MI": "Terna",
     "D": "Dominion",
     "ULVR.L": "Unilever",
@@ -343,7 +341,15 @@
       "AIR.PA": 14,
       "BWXT": 12,
       "GD": 10
+    },
+    "PIE13_Utility_Nucleare": {
+      "CEG": 20,
+      "ENEL.MI": 18,
+      "IBE.MC": 17,
+      "ETR": 14,
+      "TRN.MI": 13,
+      "D": 18
     }
   },
-  "last_change": "PIE10 Difesa: Rheinmetall 16%→18%, BAE Systems 14%→12%"
+  "last_change": "PIE13: rimossa Snam (non disponibile T212), pesi ridistribuiti"
 }
