@@ -312,7 +312,7 @@ PIE09 Quality Healthcare (Tier 2, 5%): Johnson & Johnson 18%, Eli Lilly 16%, Nov
 PIE10 Quality Difesa (Tier 2, 5%): Lockheed Martin 18%, Northrop Grumman 16%, Rheinmetall 16%, BAE Systems 14%, Airbus 14%, BWX Technologies 12%, General Dynamics 10%
 PIE11 Quality Chip (Tier 2, 4%): TSMC 28%, Samsung 22%, SK Hynix 18%, Qualcomm 16%, Tokyo Electron 16%
 PIE12 Quality Infrastrutture (Tier 2, 4%): Brookfield Infrastructure 26%, Vinci 22%, Ferrovial 20%, Getlink 17%, National Grid 15%
-PIE13 Utility Nucleare (Tier 3, 6%): Constellation Energy 18%, Enel 16%, Iberdrola 15%, Entergy 13%, Snam 12%, Terna 12%, Dominion Energy 14%
+PIE13 Utility Nucleare (Tier 3, 6%): Constellation Energy 20%, Enel 18%, Iberdrola 17%, Entergy 14%, Terna 13%, Dominion Energy 18%
 PIE14 Consumer Staples (Tier 3, 5%): Procter & Gamble 20%, Coca-Cola 18%, PepsiCo 16%, Unilever 16%, Costco 16%, Colgate-Palmolive 14%
 PIE15 Gas Industriali (Tier 3, 5%): Air Liquide 28%, Linde 24%, Sika 20%, Sherwin-Williams 14%, Air Products 14%
 PIE16 Midstream Pipeline (Tier 3, 4%): Williams Companies 28%, Enbridge 24%, Kinder Morgan 20%, TC Energy 16%, PPL Corporation 12%
@@ -413,7 +413,7 @@ def send_weekly_review():
         "Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics",
         "TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron",
         "Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid",
-        "Enel","Iberdrola","Entergy","Snam","Terna","Dominion Energy",
+        "Enel","Iberdrola","Entergy","Terna","Dominion Energy",
         "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Air Products","Kinder Morgan","TC Energy","PPL Corporation",
         "NVIDIA","Alphabet","Meta","Amazon","AMD",
         "Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"
