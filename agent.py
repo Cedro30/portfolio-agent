@@ -302,22 +302,22 @@ PORTAFOGLIO — 18 PIE, 100 TITOLI, 4 TIER:
 
 PIE01 Aristocrats USA (Tier 1, 8%): Procter & Gamble 16%, Johnson & Johnson 15%, Coca-Cola 14%, PepsiCo 12%, Abbott 11%, Medtronic 11%, Walmart 10%, Emerson Electric 11%
 PIE02 Aristocrats EU (Tier 1, 7%): Air Liquide 18%, Nestle 15%, L'Oreal 14%, Sika 13%, Wolters Kluwer 12%, Dassault Systemes 12%, Linde 16%
-PIE03 Aristocrats Asia (Tier 1, 7%): DBS Group 38%, Toyota 30%, Sony Group 20%, Commonwealth Bank 12%
+PIE03 Aristocrats Asia (Tier 1, 7%): DBS Group 28%, Toyota 35%, Sony Group 25%, Commonwealth Bank 12%
 PIE04 Champions Energia (Tier 1, 6%): ExxonMobil 18%, Chevron 16%, Williams Companies 18%, Enbridge 16%, TotalEnergies 8%, EOG Resources 12%, Constellation Energy 12%
 PIE05 Champions Finanza (Tier 1, 6%): HSBC 18%, AXA 16%, Allianz 16%, AIG 14%, UniCredit 12%, BNP Paribas 12%, Macquarie 12%
 PIE06 REIT Growth (Tier 1, 6%): Realty Income 22%, Prologis 18%, American Tower 18%, Equinix 14%, WP Carey 14%, American Water 14%
 PIE07 Quality Tech (Tier 2, 6%): ASML 22%, Microsoft 20%, Texas Instruments 18%, Apple 16%, SAP 14%, Broadcom 10%
-PIE08 Quality Lusso (Tier 2, 6%): LVMH 24%, Hermes 20%, Richemont 16%, Ferrari 16%, Moncler 12%, Estee Lauder 12%
+PIE08 Quality Lusso (Tier 2, 6%): LVMH 24%, Hermes 22%, Richemont 18%, Ferrari 16%, Moncler 12%, Kering 8%
 PIE09 Quality Healthcare (Tier 2, 5%): Johnson & Johnson 18%, Eli Lilly 16%, Novo Nordisk 14%, AstraZeneca 14%, Thermo Fisher 12%, Roche 12%, UnitedHealth 14%
 PIE10 Quality Difesa (Tier 2, 5%): Lockheed Martin 18%, Northrop Grumman 16%, Rheinmetall 16%, BAE Systems 14%, Airbus 14%, BWX Technologies 12%, General Dynamics 10%
 PIE11 Quality Chip (Tier 2, 4%): TSMC 28%, Samsung 22%, SK Hynix 18%, Qualcomm 16%, Tokyo Electron 16%
-PIE12 Quality Infrastrutture (Tier 2, 4%): Brookfield Infrastructure 26%, Vinci 22%, Ferrovial 20%, Getlink 17%, National Grid 15%
-PIE13 Utility Nucleare (Tier 3, 6%): Constellation Energy 20%, Enel 18%, Iberdrola 17%, Entergy 14%, Terna 13%, Dominion Energy 18%
+PIE12 Quality Infrastrutture (Tier 2, 4%): Brookfield Infrastructure 22%, Vinci 20%, Ferrovial 18%, Getlink 15%, National Grid 13%, Aena 12%
+PIE13 Utility Nucleare (Tier 3, 6%): Constellation Energy 22%, Enel 18%, Iberdrola 17%, Entergy 14%, Cameco 14%, Dominion Energy 15%
 PIE14 Consumer Staples (Tier 3, 5%): Procter & Gamble 20%, Coca-Cola 18%, PepsiCo 16%, Unilever 16%, Costco 16%, Colgate-Palmolive 14%
 PIE15 Gas Industriali (Tier 3, 5%): Air Liquide 32%, Linde 28%, Sika 23%, Sherwin-Williams 17%
-PIE16 Midstream Pipeline (Tier 3, 4%): Williams Companies 28%, Enbridge 24%, Kinder Morgan 20%, TC Energy 16%, PPL Corporation 12%
-PIE17 AI Tech (Tier 4, 6%): NVIDIA 25%, Alphabet 22%, Meta 20%, Amazon 18%, AMD 10%, China Internet ETF 5%
-PIE18 EM Growth (Tier 4, 4%): Infosys 20%, HDFC Bank 18%, Itau Unibanco 16%, Vale 14%, Reliance Industries 12%, China Internet ETF 12%, ICICI Bank 8%
+PIE16 Midstream Pipeline (Tier 3, 4%): Williams Companies 24%, Enbridge 20%, Kinder Morgan 18%, TC Energy 14%, PPL Corporation 12%, Enagas 12%
+PIE17 AI Tech (Tier 4, 6%): NVIDIA 28%, Alphabet 25%, Meta 22%, Amazon 18%, AMD 7%
+PIE18 EM Growth (Tier 4, 4%): Infosys 18%, HDFC Bank 16%, Itau Unibanco 14%, Vale 12%, Reliance Industries 12%, MercadoLibre 18%, ICICI Bank 10%
 
 REGOLE RACCOMANDAZIONI OPERATIVE:
 Hai due livelli di raccomandazione:
@@ -408,13 +408,13 @@ def send_weekly_review():
         "HSBC","AXA","Allianz","AIG","UniCredit","BNP Paribas","Macquarie",
         "Realty Income","Prologis","American Tower","Equinix","WP Carey","American Water",
         "ASML","Microsoft","Texas Instruments","Apple","SAP","Broadcom",
-        "LVMH","Hermes","Richemont","Ferrari","Moncler","Estee Lauder",
+        "LVMH","Hermes","Richemont","Ferrari","Moncler","Kering",
         "Eli Lilly","Novo Nordisk","AstraZeneca","Thermo Fisher","Roche","UnitedHealth",
         "Lockheed Martin","Northrop Grumman","Rheinmetall","BAE Systems","Airbus","BWX Technologies","General Dynamics",
         "TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron",
         "Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid",
-        "Enel","Iberdrola","Entergy","Terna","Dominion Energy",
-        "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Kinder Morgan","TC Energy","PPL Corporation",
+        "Enel","Iberdrola","Entergy","Cameco","Dominion Energy",
+        "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Kinder Morgan","Enagas","Aena","MercadoLibre","TC Energy","PPL Corporation",
         "NVIDIA","Alphabet","Meta","Amazon","AMD",
         "Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"
     ]
