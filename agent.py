@@ -320,7 +320,16 @@ PIE17 AI Tech (Tier 4, 6%): NVIDIA 25%, Alphabet 22%, Meta 20%, Amazon 18%, AMD 
 PIE18 EM Growth (Tier 4, 4%): Infosys 20%, HDFC Bank 18%, Itau Unibanco 16%, Vale 14%, Reliance Industries 12%, China Internet ETF 12%, ICICI Bank 8%
 
 REGOLE RACCOMANDAZIONI OPERATIVE:
-Quando modifichi un PIE elenca SEMPRE tutti i titoli con % precise che sommano a 100%.
+Hai due livelli di raccomandazione:
+
+LIVELLO 1 — Peso titoli dentro un PIE:
+Quando modifichi i pesi dentro un PIE elenca SEMPRE tutti i titoli con % precise che sommano a 100%.
+
+LIVELLO 2 — Peso del PIE nel portafoglio totale:
+Puoi anche consigliare di aumentare o ridurre il peso di un intero PIE nel portafoglio.
+In questo caso elenca tutti i 18 PIE con i nuovi pesi % che sommano a 100%.
+Esempio: "PIE10 Difesa: 5% → 7%, PIE06 REIT: 6% → 4%"
+
 Motiva ogni modifica in una frase. No trading tattico. Solo cambi strutturali."""
 
 def claude_with_search(prompt, max_tokens=2000):
@@ -374,13 +383,17 @@ def has_operational_recommendation(text):
     peso_era    = re.findall(r"\d+%.{1,10}era.{1,5}\d+%", text_lower)
     dal_al      = re.findall(r"dal \d+% al \d+%", text_lower)
     # Presenza della sezione raccomandazioni operative con almeno un titolo
-    has_section = "raccomandazioni operative" in text_lower
-    has_titles  = len(re.findall(r":\s*\d+%", text_lower)) >= 3
+    has_section   = "raccomandazioni operative" in text_lower
+    has_rib_pesi  = "ribilanciamento pesi pie" in text_lower
+    has_titles    = len(re.findall(r":\s*\d+%", text_lower)) >= 3
+    has_pie_change = len(re.findall(r"pie\d+.{1,20}era \d+%", text_lower)) >= 1
     return (count >= 3 or
             len(peso_changes) >= 1 or
             len(peso_era) >= 1 or
             len(dal_al) >= 1 or
-            (has_section and has_titles))
+            has_pie_change or
+            (has_section and has_titles) or
+            (has_rib_pesi and has_titles))
 
 # ── WEEKLY REVIEW — lunedi 09:00 CET ─────────────────────────
 def send_weekly_review():
@@ -429,11 +442,17 @@ def send_weekly_review():
         f"   Tier 2 Quality: moat competitivi invariati?\n"
         f"   Tier 3 Low Volatility: stabilita confermata?\n"
         f"   Tier 4 Momentum: tesi growth reggono?\n\n"
-        f"6. RACCOMANDAZIONI OPERATIVE\n"
-        f"   SOLO se un evento strutturale giustifica una modifica.\n"
+        f"6. RIBILANCIAMENTO PESI PIE\n"
+        f"   Valuta se il peso di ogni PIE nel portafoglio totale e ancora ottimale.\n"
+        f"   Considera: contesto macro, ciclo economico, settori in favore/sfavore.\n"
+        f"   Se suggerisci cambi: elenca tutti i 18 PIE con i nuovi pesi % che sommano a 100%.\n"
+        f"   Formato: PIE01 8% (invariato), PIE10 7% (era 5%), PIE06 4% (era 6%)\n"
+        f"   Se nessun cambio: 'Pesi PIE ottimali — nessuna modifica.'\n\n"
+        f"7. RACCOMANDAZIONI OPERATIVE SUI TITOLI\n"
+        f"   SOLO se un evento strutturale giustifica una modifica dei pesi dentro un PIE.\n"
         f"   Elenca TUTTI i titoli del PIE con % precise che sommano a 100%.\n"
-        f"   Se nessuna modifica necessaria: 'Portafoglio solido — nessuna azione.'\n\n"
-        f"7. FRASE DELLA SETTIMANA\n"
+        f"   Se nessuna modifica: 'Pesi titoli ottimali — nessuna azione.'\n\n"
+        f"8. FRASE DELLA SETTIMANA\n"
         f"   Un insight strategico per la settimana che inizia."
     )
 
