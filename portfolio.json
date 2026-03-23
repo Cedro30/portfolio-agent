@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-23 - Air Products rimossa da PIE15",
+  "last_updated": "2026-03-23 - Revisione professionale completa",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -99,7 +99,7 @@
         "CFR.SW",
         "RACE",
         "MONC.MI",
-        "EL"
+        "KER.PA"
       ]
     },
     "PIE09_Quality_Healthcare": {
@@ -147,7 +147,8 @@
         "DG.PA",
         "FER.MC",
         "GET.PA",
-        "NG.L"
+        "NG.L",
+        "AENA.MC"
       ]
     },
     "PIE13_Utility_Nucleare": {
@@ -158,7 +159,7 @@
         "ENEL.MI",
         "IBE.MC",
         "ETR",
-        "TRN.MI",
+        "CCJ",
         "D"
       ]
     },
@@ -192,7 +193,8 @@
         "ENB",
         "KMI",
         "TRP",
-        "PPL"
+        "PPL",
+        "ENG.MC"
       ]
     },
     "PIE17_AI_Tech": {
@@ -203,8 +205,7 @@
         "GOOGL",
         "META",
         "AMZN",
-        "AMD",
-        "KWEB"
+        "AMD"
       ]
     },
     "PIE18_EM_Growth": {
@@ -215,9 +216,9 @@
         "HDB",
         "ITUB",
         "VALE",
-        "IBN",
-        "KWEB",
-        "RELIANCE.NS"
+        "RELIANCE.NS",
+        "MELI",
+        "IBN"
       ]
     }
   },
@@ -272,7 +273,6 @@
     "CFR.SW": "Richemont",
     "RACE": "Ferrari",
     "MONC.MI": "Moncler",
-    "EL": "Estee Lauder",
     "LLY": "Eli Lilly",
     "NOVOB.CO": "Novo Nordisk",
     "AZN": "AstraZeneca",
@@ -298,7 +298,6 @@
     "ENEL.MI": "Enel",
     "IBE.MC": "Iberdrola",
     "ETR": "Entergy",
-    "TRN.MI": "Terna",
     "D": "Dominion",
     "ULVR.L": "Unilever",
     "COST": "Costco",
@@ -311,7 +310,6 @@
     "META": "Meta",
     "AMZN": "Amazon",
     "AMD": "AMD",
-    "KWEB": "China Internet ETF",
     "INFY": "Infosys",
     "HDB": "HDFC Bank",
     "ITUB": "Itau Unibanco",
@@ -319,7 +317,12 @@
     "IBN": "ICICI Bank",
     "RELIANCE.NS": "Reliance Industries",
     "NG.L": "National Grid",
-    "CL": "Colgate-Palmolive"
+    "CL": "Colgate-Palmolive",
+    "KER.PA": "Kering",
+    "AENA.MC": "Aena",
+    "CCJ": "Cameco",
+    "MELI": "MercadoLibre",
+    "ENG.MC": "Enagas"
   },
   "pie_weights": {
     "PIE04_Champions_Energia": {
@@ -341,19 +344,65 @@
       "GD": 10
     },
     "PIE13_Utility_Nucleare": {
-      "CEG": 20,
+      "CEG": 22,
       "ENEL.MI": 18,
       "IBE.MC": 17,
       "ETR": 14,
-      "TRN.MI": 13,
-      "D": 18
+      "CCJ": 14,
+      "D": 15
     },
     "PIE15_Gas_Industriali": {
       "AI.PA": 32,
       "LIN": 28,
       "SIKA.SW": 23,
       "SHW": 17
+    },
+    "PIE03_Aristocrats_Asia": {
+      "D05.SI": 28,
+      "7203.T": 35,
+      "6758.T": 25,
+      "CBA.AX": 12
+    },
+    "PIE08_Quality_Lusso": {
+      "MC.PA": 24,
+      "RMS.PA": 22,
+      "CFR.SW": 18,
+      "RACE": 16,
+      "MONC.MI": 12,
+      "KER.PA": 8
+    },
+    "PIE12_Quality_Infrastrutture": {
+      "BIP": 22,
+      "DG.PA": 20,
+      "FER.MC": 18,
+      "GET.PA": 15,
+      "NG.L": 13,
+      "AENA.MC": 12
+    },
+    "PIE17_AI_Tech": {
+      "NVDA": 28,
+      "GOOGL": 25,
+      "META": 22,
+      "AMZN": 18,
+      "AMD": 7
+    },
+    "PIE18_EM_Growth": {
+      "INFY": 18,
+      "HDB": 16,
+      "ITUB": 14,
+      "VALE": 12,
+      "RELIANCE.NS": 12,
+      "MELI": 18,
+      "IBN": 10
+    },
+    "PIE16_Midstream_Pipeline": {
+      "WMB": 24,
+      "ENB": 20,
+      "KMI": 18,
+      "TRP": 14,
+      "PPL": 12,
+      "ENG.MC": 12
     }
   },
-  "last_change": "PIE15: rimossa Air Products (non su T212), pesi ridistribuiti"
+  "last_change": "PIE03/08/12/13/16/17/18 aggiornati"
 }
