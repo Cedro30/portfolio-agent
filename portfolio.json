@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-23 - Snam rimossa da PIE13",
+  "last_updated": "2026-03-23 - Air Products rimossa da PIE15",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -181,8 +181,7 @@
         "AI.PA",
         "LIN",
         "SIKA.SW",
-        "SHW",
-        "APD"
+        "SHW"
       ]
     },
     "PIE16_Midstream_Pipeline": {
@@ -304,7 +303,6 @@
     "ULVR.L": "Unilever",
     "COST": "Costco",
     "SHW": "Sherwin-Williams",
-    "APD": "Air Products",
     "KMI": "Kinder Morgan",
     "TRP": "TC Energy",
     "PPL": "PPL Corporation",
@@ -349,7 +347,13 @@
       "ETR": 14,
       "TRN.MI": 13,
       "D": 18
+    },
+    "PIE15_Gas_Industriali": {
+      "AI.PA": 32,
+      "LIN": 28,
+      "SIKA.SW": 23,
+      "SHW": 17
     }
   },
-  "last_change": "PIE13: rimossa Snam (non disponibile T212), pesi ridistribuiti"
+  "last_change": "PIE15: rimossa Air Products (non su T212), pesi ridistribuiti"
 }
