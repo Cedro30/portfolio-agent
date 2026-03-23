@@ -314,7 +314,7 @@ PIE11 Quality Chip (Tier 2, 4%): TSMC 28%, Samsung 22%, SK Hynix 18%, Qualcomm 1
 PIE12 Quality Infrastrutture (Tier 2, 4%): Brookfield Infrastructure 26%, Vinci 22%, Ferrovial 20%, Getlink 17%, National Grid 15%
 PIE13 Utility Nucleare (Tier 3, 6%): Constellation Energy 20%, Enel 18%, Iberdrola 17%, Entergy 14%, Terna 13%, Dominion Energy 18%
 PIE14 Consumer Staples (Tier 3, 5%): Procter & Gamble 20%, Coca-Cola 18%, PepsiCo 16%, Unilever 16%, Costco 16%, Colgate-Palmolive 14%
-PIE15 Gas Industriali (Tier 3, 5%): Air Liquide 28%, Linde 24%, Sika 20%, Sherwin-Williams 14%, Air Products 14%
+PIE15 Gas Industriali (Tier 3, 5%): Air Liquide 32%, Linde 28%, Sika 23%, Sherwin-Williams 17%
 PIE16 Midstream Pipeline (Tier 3, 4%): Williams Companies 28%, Enbridge 24%, Kinder Morgan 20%, TC Energy 16%, PPL Corporation 12%
 PIE17 AI Tech (Tier 4, 6%): NVIDIA 25%, Alphabet 22%, Meta 20%, Amazon 18%, AMD 10%, China Internet ETF 5%
 PIE18 EM Growth (Tier 4, 4%): Infosys 20%, HDFC Bank 18%, Itau Unibanco 16%, Vale 14%, Reliance Industries 12%, China Internet ETF 12%, ICICI Bank 8%
@@ -414,7 +414,7 @@ def send_weekly_review():
         "TSMC","Samsung","SK Hynix","Qualcomm","Tokyo Electron",
         "Brookfield Infrastructure","Vinci","Ferrovial","Getlink","National Grid",
         "Enel","Iberdrola","Entergy","Terna","Dominion Energy",
-        "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Air Products","Kinder Morgan","TC Energy","PPL Corporation",
+        "Unilever","Costco","Colgate-Palmolive","Sherwin-Williams","Kinder Morgan","TC Energy","PPL Corporation",
         "NVIDIA","Alphabet","Meta","Amazon","AMD",
         "Infosys","HDFC Bank","Itau Unibanco","Vale","ICICI Bank","Reliance Industries"
     ]
