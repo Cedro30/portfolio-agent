@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-22 - Approvato via Telegram",
+  "last_updated": "2026-03-23 - Weekly Review approvata",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -334,7 +334,16 @@
       "TTE": 8,
       "EOG": 12,
       "CEG": 12
+    },
+    "PIE10_Quality_Difesa": {
+      "LMT": 18,
+      "RHM.DE": 18,
+      "NOC": 16,
+      "BAESY": 12,
+      "AIR.PA": 14,
+      "BWXT": 12,
+      "GD": 10
     }
   },
-  "last_change": "PIE04 Champions Energia: ridotto TotalEnergies 12%→8%, aumentato Williams Companies 16%→18%, Enbridge 14%→16%, EOG 10%→12%, CEG 10%→12%"
+  "last_change": "PIE10 Difesa: Rheinmetall 16%→18%, BAE Systems 14%→12%"
 }
