@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-23 - Revisione professionale completa",
+  "last_updated": "2026-04-06 08:27 UTC",
   "description": "Factor Portfolio 18 PIE — Trading 212",
   "pies": {
     "PIE01_Aristocrats_USA": {
@@ -404,5 +404,5 @@
       "ENG.MC": 12
     }
   },
-  "last_change": "PIE03/08/12/13/16/17/18 aggiornati"
+  "last_change": "PIE08_Quality_Lusso aggiornato"
 }
