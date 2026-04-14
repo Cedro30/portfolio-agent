@@ -332,27 +332,38 @@ Esempio: "PIE10 Difesa: 5% → 7%, PIE06 REIT: 6% → 4%"
 
 Motiva ogni modifica in una frase. No trading tattico. Solo cambi strutturali."""
 
-def claude_with_search(prompt, max_tokens=2000):
+def claude_with_search(prompt, max_tokens=2000, retries=4):
+    """Chiama Claude con retry automatico su errori 529/503/429 (overload)."""
     if not ANTHROPIC_API_KEY:
         return None
-    try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-sonnet-4-20250514",
-                  "max_tokens": max_tokens,
-                  "system": SYSTEM_PROMPT,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]},
-            timeout=120)
-        if r.ok:
-            parts = [b["text"] for b in r.json().get("content", []) if b.get("type") == "text"]
-            return "\n".join(parts) if parts else None
-        log.error(f"Claude error: {r.status_code}")
-    except Exception as e:
-        log.error(f"Claude exception: {e}")
+    for attempt in range(retries):
+        try:
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": ANTHROPIC_API_KEY,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={"model": "claude-sonnet-4-20250514",
+                      "max_tokens": max_tokens,
+                      "system": SYSTEM_PROMPT,
+                      "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+                      "messages": [{"role": "user", "content": prompt}]},
+                timeout=120)
+            if r.ok:
+                parts = [b["text"] for b in r.json().get("content", []) if b.get("type") == "text"]
+                return "\n".join(parts) if parts else None
+            elif r.status_code in (529, 503, 500, 429):
+                wait = 30 * (attempt + 1)
+                log.warning(f"Claude {r.status_code} — retry {attempt+1}/{retries} tra {wait}s")
+                time.sleep(wait)
+            else:
+                log.error(f"Claude error: {r.status_code}")
+                return None
+        except Exception as e:
+            wait = 30 * (attempt + 1)
+            log.error(f"Claude exception (attempt {attempt+1}): {e}")
+            time.sleep(wait)
+    log.error("Claude: tutti i retry esauriti")
     return None
 
 def generate_t212_instructions(analysis):
@@ -458,8 +469,14 @@ def send_weekly_review():
 
     analysis = claude_with_search(prompt, max_tokens=2500)
     if not analysis:
-        log.error("Weekly Review fallita")
-        return
+        log.error("Weekly Review fallita — riprovo tra 1 ora")
+        send_telegram("⚠️ <b>Weekly Review</b> — primo tentativo fallito (API sovraccarica). Riprovo tra 1 ora.")
+        time.sleep(3600)
+        analysis = claude_with_search(prompt, max_tokens=2500)
+        if not analysis:
+            log.error("Weekly Review fallita definitivamente")
+            send_telegram("❌ <b>Weekly Review</b> non disponibile — API sovraccarica. Riprovo lunedi prossimo.")
+            return
 
     msg = (
         f"📊 <b>WEEKLY REVIEW — {now.strftime('%d/%m/%Y')}</b>\n"
